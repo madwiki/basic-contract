@@ -13,6 +13,7 @@ contract MaihuolongOrg is Owned {
   uint public rewardNonce;
 
   mapping (address => User) public userMap;
+  mapping (address => uint8) public topRankPermissionMap;
   mapping (uint => BlockedHistory) public blockedMap;
 
   struct BlockedHistory {
@@ -40,7 +41,7 @@ contract MaihuolongOrg is Owned {
     mht = Token(_mht);
   }
 
-  function getUserRank(address _userAddr) public returns(uint8) {
+  function getUserRank(address _userAddr) public view returns(uint8) {
     return userMap[_userAddr].rank;
   }
 
@@ -143,6 +144,18 @@ contract MaihuolongOrg is Owned {
     userMap[_applicant].rank = 1;
     userMap[_applicant].level = userMap[parent].level + 1;
     userMap[parent].children.push(_applicant);
+    
+    uint8 prevTopRankPermission = topRankPermissionMap[_invitor];
+    if (prevTopRankPermission != 0) {
+      if (userMap[_invitor].rank == 8) {
+        if (prevTopRankPermission >= 3) {
+          userMap[_invitor].rank = 9;
+        } else {
+          topRankPermissionMap[_invitor] = prevTopRankPermission + 1;
+        }
+      }
+      
+    }
   }
 
   function lowRankUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
@@ -154,6 +167,16 @@ contract MaihuolongOrg is Owned {
     require(_highRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
     userMap[_applicant].rank += 1;
   }
+
+  function topRankPrevUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
+    require(_topRankPrevUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
+    topRankPermissionMap[_applicant] = 1;
+  }
+
+  // function topRankUpgrade(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
+  //   require(_topRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
+  //   topRankPermissionMap[_applicant] += 1;
+  // }
 
   function freezeUser (
     address _targetAddr,
@@ -263,13 +286,17 @@ contract MaihuolongOrg is Owned {
 
   function _lowRankUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
-    if (applicantUser.rank == 0 || applicantUser.rank >= 3) {
+    if (applicantUser.rank == 0 || applicantUser.rank >= 4) {
       return false;
     }
 
     uint8 targetRank = applicantUser.rank + 1;
 
     if (targetRank == 2 && applicantUser.children.length != 3) {
+      return false;
+    }
+
+    if (targetRank == 4 && !_checkRank1Count(_applicant, 27)) {
       return false;
     }
 
@@ -285,15 +312,11 @@ contract MaihuolongOrg is Owned {
 
   function _highRankUpgradeCheck(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
-    if (applicantUser.rank < 3 || applicantUser.rank == 9) {
+    if (applicantUser.rank < 4 || applicantUser.rank >= 8) {
       return false;
     }
 
     uint8 targetRank = applicantUser.rank + 1;
-
-    if (targetRank == 4 && !_checkRank1Count(_applicant, 27)) {
-      return false;
-    }
 
     bytes32 upgradeHash = upgradeHashBuild(_applicant, targetRank);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
@@ -307,6 +330,45 @@ contract MaihuolongOrg is Owned {
       && _rewardByTx(approver)
       && _rewardByTx(officer);
   }
+
+  function _topRankPrevUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
+    User memory applicantUser = userMap[_applicant];
+    if (applicantUser.rank != 8) {
+      return false;
+    }
+
+    uint8 targetRank = applicantUser.rank + 1;
+
+    bytes32 upgradeHash = upgradeHashBuild(_applicant, targetRank);
+    bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
+    address approver = _getApprover(_applicant, targetRank);
+
+    return
+      _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
+      && approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
+      && _rewardByTx(approver);
+  }
+
+  // function _topRankUpgradeCheck(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
+  //   if (topRankPermissionMap[_applicant] != 1) {
+  //     return false;
+  //   }
+
+  //   bytes32 upgradeHash = upgradeHashBuild(_applicant, 9);
+  //   bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
+
+  //   for (uint8 index = 0; index < 3; index++) {
+      
+  //   }
+
+  //   address addr0 = ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0]);
+
+
+  //   return
+  //     _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
+  //     && approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
+  //     && _rewardByTx(approver);
+  // }
 
   function _checkRank1Count(address _applicant, uint16 _targetCount) private view returns (bool) {
     uint16 count = 0;
@@ -344,7 +406,7 @@ contract MaihuolongOrg is Owned {
   }
 
   function _getOfficerWithModify(address _applicant, uint8 _targetRank) private returns (address) {
-    require(_targetRank == 1 || _targetRank >= 4);
+    require(_targetRank == 1 || (_targetRank >= 4 && _targetRank < 9));
     uint8 officerRank = _targetRank == 1
     ? 4
     : _targetRank < 7
@@ -392,7 +454,7 @@ contract MaihuolongOrg is Owned {
   }
 
   function getOfficer(address _applicant, uint8 _targetRank) public view returns (address) {
-    require(_targetRank == 1 || _targetRank >= 4);
+    require(_targetRank == 1 || (_targetRank >= 4 && _targetRank < 9));
     uint8 officerRank = _targetRank == 1
     ? 4
     : _targetRank < 7
