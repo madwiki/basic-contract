@@ -263,7 +263,7 @@ contract MaihuolongOrg is Owned {
 
   function _lowRankUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
-    if (applicantUser.rank == 0 ||applicantUser.rank >= 4) {
+    if (applicantUser.rank == 0 || applicantUser.rank >= 3) {
       return false;
     }
 
@@ -285,13 +285,13 @@ contract MaihuolongOrg is Owned {
 
   function _highRankUpgradeCheck(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
-    if (applicantUser.rank < 4 || applicantUser.rank == 9) {
+    if (applicantUser.rank < 3 || applicantUser.rank == 9) {
       return false;
     }
 
     uint8 targetRank = applicantUser.rank + 1;
 
-    if (targetRank == 5 && !_checkRank1Count(_applicant, 81)) {
+    if (targetRank == 4 && !_checkRank1Count(_applicant, 27)) {
       return false;
     }
 
@@ -344,12 +344,16 @@ contract MaihuolongOrg is Owned {
   }
 
   function _getOfficerWithModify(address _applicant, uint8 _targetRank) private returns (address) {
-    require(_targetRank == 1 || _targetRank >= 5);
-    uint8 officerRank = _targetRank == 1 ? 5 : 9;
+    require(_targetRank == 1 || _targetRank >= 4);
+    uint8 officerRank = _targetRank == 1
+    ? 4
+    : _targetRank < 7
+    ? 7
+    : 9;
     address officer = _applicant;
     User memory officerUser = userMap[officer];
 
-    if (officerRank == 5) {
+    if (officerRank == 4) {
       bool shouldPassToParent = true;
 
       while (shouldPassToParent) {
@@ -364,7 +368,7 @@ contract MaihuolongOrg is Owned {
             childOfUpperOfficer = upperOfficer;
             upperOfficer = userMap[upperOfficer.parent];
           }
-          if (childOfUpperOfficer.rank1Delivered >= 81) {
+          if (childOfUpperOfficer.rank1Delivered >= 27) {
             shouldPassToParent = false;
           } else {
             userMap[childOfUpperOfficer.self].rank1Delivered += 1;
@@ -388,12 +392,16 @@ contract MaihuolongOrg is Owned {
   }
 
   function getOfficer(address _applicant, uint8 _targetRank) public view returns (address) {
-    require(_targetRank == 1 || _targetRank >= 5);
-    uint8 officerRank = _targetRank == 1 ? 5 : 9;
+    require(_targetRank == 1 || _targetRank >= 4);
+    uint8 officerRank = _targetRank == 1
+    ? 4
+    : _targetRank < 7
+    ? 7
+    : 9;
     address officer = _applicant;
     User memory officerUser = userMap[officer];
 
-    if (officerRank == 5) {
+    if (officerRank == 4) {
       bool shouldPassToParent = true;
 
       while (shouldPassToParent) {
@@ -408,7 +416,7 @@ contract MaihuolongOrg is Owned {
             childOfUpperOfficer = upperOfficer;
             upperOfficer = userMap[upperOfficer.parent];
           }
-          if (childOfUpperOfficer.rank1Delivered >= 81) {
+          if (childOfUpperOfficer.rank1Delivered >= 27) {
             shouldPassToParent = false;
           } else {
             officer = upperOfficer.self;
