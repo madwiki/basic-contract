@@ -36,9 +36,29 @@ contract MaihuolongOrg is Owned {
     uint rank1Delivered;
   }
 
-  constructor(address _mht) public {
+  constructor(address _mht, address _rootUserAddr) public {
     owner = msg.sender;
     mht = Token(_mht);
+    rootUserAddr = _rootUserAddr;
+  }
+
+  function batchInitUsers(address[] memory _parents, address[] memory _targets) public onlyOwner {
+    for (uint index = 0; index < _parents.length; index++) {
+      initUser(_parents[index], _targets[index]);
+    }
+  }
+
+  function initUser(address _parent, address _traget) public onlyOwner {
+    // can only set the user that the level <= 9
+    uint16 parentLevel = userMap[_parent].level;
+    uint childrenLength = userMap[_parent].children.length;
+    require(parentLevel <= 8, 'wrong level');
+    require(childrenLength < 3, 'children is full');
+
+    userMap[_traget].parent = _parent;
+    userMap[_traget].self = _traget;
+    userMap[_traget].rank = parentLevel < 5 ? 9 : 4;
+    userMap[_traget].level = parentLevel + 1;
   }
 
   function getUserRank(address _userAddr) public view returns(uint8) {
@@ -139,10 +159,10 @@ contract MaihuolongOrg is Owned {
 
     require(_registerCheck(_applicant, parent, _vArray, _rArray, _sArray));
     userMap[_applicant].parent = parent;
-
     userMap[_applicant].self = _applicant;
     userMap[_applicant].rank = 1;
     userMap[_applicant].level = userMap[parent].level + 1;
+
     userMap[parent].children.push(_applicant);
     
     uint8 prevTopRankPermission = topRankPermissionMap[_invitor];
