@@ -1,0 +1,25 @@
+{
+  "name": "basic-contract",
+  "version": "1.0.0",
+  "description": "",
+  "main": "test/maihuolang.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "truffle test"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sod-maker-union/basic-contract.git"
+  },
+  "author": "Mad Wiki",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/sod-maker-union/basic-contract/issues"
+  },
+  "homepage": "https://github.com/sod-maker-union/basic-contract#readme",
+  "dependencies": {
+    "web3": "^1.0.0-beta.50"
+  }
+}

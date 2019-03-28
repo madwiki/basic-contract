@@ -3,7 +3,7 @@ import "./zeppelin-solidity/ECRecovery.sol";
 import "./Owned.sol";
 import { Token } from "./Token.sol";
 
-contract MaihuolongOrg is Owned {
+contract MaihuolangOrg is Owned {
   Token mht;
   address public owner;
   address public rootUserAddr;
@@ -13,6 +13,8 @@ contract MaihuolongOrg is Owned {
   uint public rewardNonce;
 
   mapping (address => User) public userMap;
+
+  // 1: ready for upgrade, 2: upgraded
   mapping (address => uint8) public topRankPermissionMap;
   mapping (uint => BlockedHistory) public blockedMap;
 
@@ -28,6 +30,7 @@ contract MaihuolongOrg is Owned {
     address[] children;
     address parent;
     address self;
+    address invitor;
     uint8 rank;
     uint16 level;
     bool frozen;
@@ -39,7 +42,20 @@ contract MaihuolongOrg is Owned {
   constructor(address _mht, address _rootUserAddr) public {
     owner = msg.sender;
     mht = Token(_mht);
+    userMap[_rootUserAddr].self = _rootUserAddr;
+    userMap[_rootUserAddr].rank = 9;
+    userMap[_rootUserAddr].level = 1;
+    userMap[_rootUserAddr].rank1Received = 81;
+    userMap[_rootUserAddr].rank1Delivered = 27;
     rootUserAddr = _rootUserAddr;
+  }
+
+  function getChildren(address _userAddr) public view returns (address[] memory _children) {
+    _children = userMap[_userAddr].children;
+  }
+
+  function getUserRank(address _userAddr) public view returns(uint8) {
+    return userMap[_userAddr].rank;
   }
 
   function batchInitUsers(address[] memory _parents, address[] memory _targets) public onlyOwner {
@@ -48,21 +64,25 @@ contract MaihuolongOrg is Owned {
     }
   }
 
-  function initUser(address _parent, address _traget) public onlyOwner {
+  function initUser(address _parent, address _target) public onlyOwner {
     // can only set the user that the level <= 9
     uint16 parentLevel = userMap[_parent].level;
     uint childrenLength = userMap[_parent].children.length;
-    require(parentLevel <= 8, 'wrong level');
+    require(userMap[_target].self == address(0), 'Already exists');
+    require(parentLevel <= 8, 'Wrong level');
     require(childrenLength < 3, 'children is full');
 
-    userMap[_traget].parent = _parent;
-    userMap[_traget].self = _traget;
-    userMap[_traget].rank = parentLevel < 5 ? 9 : 4;
-    userMap[_traget].level = parentLevel + 1;
-  }
-
-  function getUserRank(address _userAddr) public view returns(uint8) {
-    return userMap[_userAddr].rank;
+    userMap[_target].parent = _parent;
+    userMap[_target].self = _target;
+    userMap[_target].rank = parentLevel < 5 ? 9
+    : parentLevel < 7
+    ? 7 : 5;
+    userMap[_target].level = parentLevel + 1;
+    userMap[_target].rank1Delivered = 27;
+    if (parentLevel < 8) {
+      userMap[_target].rank1Received = 81;
+    }
+    userMap[_parent].children.push(_target);
   }
 
   function committeeRetrial(
@@ -155,9 +175,9 @@ contract MaihuolongOrg is Owned {
   }
 
   function register(address _applicant, address _invitor, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
-    address parent = _matchParent(_invitor);
-
-    require(_registerCheck(_applicant, parent, _vArray, _rArray, _sArray));
+    address parent = matchParent(_invitor);
+    require(userMap[_applicant].self == address(0), 'already registered');
+    require(_registerCheck(_applicant, _invitor, parent, _vArray, _rArray, _sArray), 'check fail');
     userMap[_applicant].parent = parent;
     userMap[_applicant].self = _applicant;
     userMap[_applicant].rank = 1;
@@ -165,13 +185,13 @@ contract MaihuolongOrg is Owned {
 
     userMap[parent].children.push(_applicant);
     
-    uint8 prevTopRankPermission = topRankPermissionMap[_invitor];
-    if (prevTopRankPermission != 0) {
+    uint8 preTopRankPermission = topRankPermissionMap[_invitor];
+    if (preTopRankPermission != 0) {
       if (userMap[_invitor].rank == 8) {
-        if (prevTopRankPermission >= 3) {
+        if (preTopRankPermission >= 3) {
           userMap[_invitor].rank = 9;
         } else {
-          topRankPermissionMap[_invitor] = prevTopRankPermission + 1;
+          topRankPermissionMap[_invitor] = preTopRankPermission + 1;
         }
       }
       
@@ -179,27 +199,22 @@ contract MaihuolongOrg is Owned {
   }
 
   function lowRankUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
-    require(_lowRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
+    require(_lowRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
     userMap[_applicant].rank += 1;
   }
 
   function highRankUpgrade(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
-    require(_highRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
+    require(_highRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
     userMap[_applicant].rank += 1;
   }
 
-  function topRankPrevUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
-    require(_topRankPrevUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
+  function topRankPreUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
+    require(_topRankPreUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
     topRankPermissionMap[_applicant] = 1;
   }
 
-  // function topRankUpgrade(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
-  //   require(_topRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed!');
-  //   topRankPermissionMap[_applicant] += 1;
-  // }
-
   function freezeUser (
-    address _targetAddr,
+    address _target,
     address _complainant,
     address _arbiter,
     bytes memory _comSig,
@@ -208,38 +223,38 @@ contract MaihuolongOrg is Owned {
     bool _shouldUpgrade,
     uint8 _type
   ) public {
-    User memory targetUser = userMap[_targetAddr];
+    User memory targetUser = userMap[_target];
     User memory complainantUser = userMap[_complainant];
     require(_type != 0, '0 is not a kind of freezing type');
-    require(targetUser.rank >= 1);
+    require(targetUser.rank >= 1, 'rank should >= 1');
     require((_lowerSueHigher && targetUser.rank > complainantUser.rank)
     || (!_lowerSueHigher && targetUser.rank < complainantUser.rank),
     'wrong value of lowerSueHigher');
-    require(!_relative(_targetAddr, _arbiter));
-    require(!_relative(_complainant, _arbiter));
+    // require(!_relative(_target, _arbiter), 'target and arbiter are relative');
+    require(!_relative(_complainant, _arbiter), 'complainant and arbiter are relative');
     if (_lowerSueHigher) {
       uint8 targetRank = _shouldUpgrade ? complainantUser.rank + 1 : complainantUser.rank;
-      require(_getApprover(_complainant, targetRank) == _targetAddr
-        || getOfficer(_complainant, targetRank) == _targetAddr);
+      require(getApprover(_complainant, targetRank) == _target
+        || getOfficer(_complainant, targetRank) == _target);
     } else {
       uint8 targetRank = _shouldUpgrade ? complainantUser.rank + 1 : complainantUser.rank;
-      require(_getApprover(_targetAddr, targetRank) == _complainant
-        || getOfficer(_targetAddr, targetRank) == _complainant);
+      require(getApprover(_target, targetRank) == _complainant
+        || getOfficer(_target, targetRank) == _complainant);
     }
-    bytes32 freezeHash = freezeHashBuild(_complainant, _type);
+    bytes32 freezeHash = freezeHashBuild(_target, _type);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(freezeHash);
     require(_complainant == ECRecovery.recover(hash, _comSig)
-    && _arbiter == ECRecovery.recover(freezeHash, _arbSig)
+    && _arbiter == ECRecovery.recover(hash, _arbSig)
     && mht.tokenIssue(_arbiter));
 
     if (_lowerSueHigher && !_shouldUpgrade) {
       userMap[_complainant].rank += 1;
     }
   
-    _changeStatusByType(_targetAddr, _type);
+    _changeStatusByType(_target, _type);
 
     blockedMap[blockedNonce] = BlockedHistory(
-      _targetAddr,
+      _target,
       _complainant,
       _arbiter,
       0,
@@ -248,16 +263,16 @@ contract MaihuolongOrg is Owned {
     blockedNonce ++;
   }
 
-  function _changeStatusByType(address _targetAddr, uint8 _type) private {
+  function _changeStatusByType(address _target, uint8 _type) private {
     if (_type == 0) {
-      userMap[_targetAddr].releaseAt = 0;
-      userMap[_targetAddr].frozen = false;
+      userMap[_target].releaseAt = 0;
+      userMap[_target].frozen = false;
     } else if (_type == 1) {
-      userMap[_targetAddr].releaseAt = now + 7 days;
+      userMap[_target].releaseAt = now + 7 days;
     } else if(_type == 2) {
-      userMap[_targetAddr].releaseAt = now + 30 days;
+      userMap[_target].releaseAt = now + 30 days;
     } else {
-      userMap[_targetAddr].frozen = true;
+      userMap[_target].frozen = true;
     }
   }
 
@@ -268,10 +283,11 @@ contract MaihuolongOrg is Owned {
     if (lowerUser.level == higherUser.level) {
       return lowerUser.parent == higherUser.parent;
     } else if (lowerUser.level < higherUser.level) {
-      User memory prevHigherUser = higherUser;
+      User memory preHigherUser = higherUser;
       higherUser = lowerUser;
-      lowerUser = prevHigherUser;
+      lowerUser = preHigherUser;
     }
+    require(lowerUser.level > higherUser.level, 'xxxx');
     User memory upperOfLowerUser = lowerUser;
     for (uint16 index; index < lowerUser.level - higherUser.level; index++) {
       upperOfLowerUser = userMap[lowerUser.parent];
@@ -279,17 +295,17 @@ contract MaihuolongOrg is Owned {
     return upperOfLowerUser.self == higherUser.self;
   }
 
-  function _matchParent(address _invitor) private view returns (address) {
+  function matchParent(address _invitor) public view returns (address) {
     address parent = _invitor;
-    while (userMap[parent].children.length < 3) {
-      parent = userMap[parent].children[0] <= userMap[parent].children[1] ?
-      userMap[parent].children[0] : userMap[parent].children[1] <= userMap[parent].children[2]
-      ? userMap[parent].children[1] : userMap[parent].children[2];
+    while (userMap[parent].children.length == 3) {
+      parent = userMap[userMap[parent].children[2]].children.length < userMap[userMap[parent].children[1]].children.length ?
+      userMap[parent].children[2] : userMap[userMap[parent].children[1]].children.length < userMap[userMap[parent].children[0]].children.length
+      ? userMap[parent].children[1] : userMap[parent].children[0];
     }
     return parent;
   }
 
-  function _registerCheck(address _applicant, address _parent, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
+  function _registerCheck(address _applicant, address _invitor, address _parent, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
     if (userMap[_applicant].rank != 0) {
       return false;
     }
@@ -298,9 +314,9 @@ contract MaihuolongOrg is Owned {
     address officer = _getOfficerWithModify(_parent, 1);
 
     return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && _parent == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
+      && _invitor == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
       && officer == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2])
-      && _rewardByTx(_parent)
+      && _rewardByTx(_invitor)
       && _rewardByTx(officer);
   }
 
@@ -316,13 +332,13 @@ contract MaihuolongOrg is Owned {
       return false;
     }
 
-    if (targetRank == 4 && !_checkRank1Count(_applicant, 27)) {
+    if (targetRank == 4 && !checkLowerLevelCount(_applicant, 27)) {
       return false;
     }
 
     bytes32 upgradeHash = upgradeHashBuild(_applicant, targetRank);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
-    address approver = _getApprover(_applicant, targetRank);
+    address approver = getApprover(_applicant, targetRank);
 
     return
     _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
@@ -340,8 +356,8 @@ contract MaihuolongOrg is Owned {
 
     bytes32 upgradeHash = upgradeHashBuild(_applicant, targetRank);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
-    address approver = _getApprover(_applicant, targetRank);
-    address officer = _getOfficerWithModify(_applicant, targetRank);
+    address approver = getApprover(_applicant, targetRank);
+    address officer = _getOfficerWithModify(applicantUser.parent, targetRank);
 
     return
       _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
@@ -351,7 +367,7 @@ contract MaihuolongOrg is Owned {
       && _rewardByTx(officer);
   }
 
-  function _topRankPrevUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
+  function _topRankPreUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
     if (applicantUser.rank != 8) {
       return false;
@@ -361,7 +377,7 @@ contract MaihuolongOrg is Owned {
 
     bytes32 upgradeHash = upgradeHashBuild(_applicant, targetRank);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
-    address approver = _getApprover(_applicant, targetRank);
+    address approver = getApprover(_applicant, targetRank);
 
     return
       _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
@@ -369,28 +385,7 @@ contract MaihuolongOrg is Owned {
       && _rewardByTx(approver);
   }
 
-  // function _topRankUpgradeCheck(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
-  //   if (topRankPermissionMap[_applicant] != 1) {
-  //     return false;
-  //   }
-
-  //   bytes32 upgradeHash = upgradeHashBuild(_applicant, 9);
-  //   bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
-
-  //   for (uint8 index = 0; index < 3; index++) {
-      
-  //   }
-
-  //   address addr0 = ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0]);
-
-
-  //   return
-  //     _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-  //     && approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
-  //     && _rewardByTx(approver);
-  // }
-
-  function _checkRank1Count(address _applicant, uint16 _targetCount) private view returns (bool) {
+  function checkLowerLevelCount(address _applicant, uint16 _targetCount) public view returns (bool) {
     uint16 count = 0;
     return _userLoop(userMap[_applicant], count, _targetCount) >= _targetCount;
   }
@@ -400,7 +395,7 @@ contract MaihuolongOrg is Owned {
     if (_currentUser.children.length > 0) {
       for (uint8 index = 0; index < _currentUser.children.length; index++) {
         User memory childUser = userMap[_currentUser.children[index]];
-        if (childUser.rank == 1) {
+        if (childUser.rank >= 1) {
           count ++;
         }
         if (count >= _targetCount) {
@@ -412,8 +407,9 @@ contract MaihuolongOrg is Owned {
     return count;
   }
 
-  function _getApprover(address _applicant, uint8 _targetRank) private view returns (address) {
+  function getApprover(address _applicant, uint8 _targetRank) public view returns (address) {
     User memory approverUser = userMap[_applicant];
+    require(approverUser.rank >= 1, 'Rank needed');
     uint16 count = 0;
     while(count < _targetRank || approverUser.rank < _targetRank) {
       if (approverUser.self == rootUserAddr) {
@@ -425,26 +421,24 @@ contract MaihuolongOrg is Owned {
     return approverUser.self;
   }
 
-  function _getOfficerWithModify(address _applicant, uint8 _targetRank) private returns (address) {
+  function _getOfficerWithModify(address _parent, uint8 _targetRank) private returns (address) {
     require(_targetRank == 1 || (_targetRank >= 4 && _targetRank < 9));
     uint8 officerRank = _targetRank == 1
     ? 4
     : _targetRank < 7
     ? 7
     : 9;
-    address officer = _applicant;
+    address officer = _parent;
     User memory officerUser = userMap[officer];
 
     if (officerRank == 4) {
       bool shouldPassToParent = true;
 
       while (shouldPassToParent) {
-        officer = officerUser.parent;
-        officerUser = userMap[officer];
-
-        if (officerUser.rank >= officerRank && (officerUser.rank1Received < 243 || officerUser.self == rootUserAddr)) {
+        if (officerUser.rank >= officerRank && officerUser.rank1Received < 81 && !isBlocked(officer)) {
           User memory upperOfficer = officerUser;
           User memory childOfUpperOfficer = officerUser;
+          require(upperOfficer.parent != address(0), 'address can not be null');
           upperOfficer = userMap[upperOfficer.parent];
           while (upperOfficer.rank < officerRank || isBlocked(upperOfficer.self)) {
             childOfUpperOfficer = upperOfficer;
@@ -452,47 +446,50 @@ contract MaihuolongOrg is Owned {
           }
           if (childOfUpperOfficer.rank1Delivered >= 27) {
             shouldPassToParent = false;
+            return officer;
           } else {
             userMap[childOfUpperOfficer.self].rank1Delivered += 1;
             officer = upperOfficer.self;
             userMap[officer].rank1Received += 1;
             shouldPassToParent = false;
+            return officer;
           }
-          shouldPassToParent = true;
-        } else {
-          shouldPassToParent = true;
+        } else if (officerUser.self == rootUserAddr) {
+          shouldPassToParent = false;
+          return officer;
         }
+        officer = officerUser.parent;
+        officerUser = userMap[officer];
       }
     } else {
-      uint8 count = 0;
-      while (count < officerRank || officerUser.rank < officerRank || isBlocked(officerUser.self)) {
+      uint8 count = 1;
+      while ((count < officerRank && officerUser.self != rootUserAddr) || officerUser.rank < officerRank || isBlocked(officer)) {
         count ++;
-        officerUser = userMap[officerUser.parent];
+        officer = officerUser.parent;
+        officerUser = userMap[officer];
       }
     }
     return officer;
   }
 
-  function getOfficer(address _applicant, uint8 _targetRank) public view returns (address) {
+  function getOfficer(address _parent, uint8 _targetRank) public view returns (address) {
     require(_targetRank == 1 || (_targetRank >= 4 && _targetRank < 9));
     uint8 officerRank = _targetRank == 1
     ? 4
     : _targetRank < 7
     ? 7
     : 9;
-    address officer = _applicant;
+    address officer = _parent;
     User memory officerUser = userMap[officer];
 
     if (officerRank == 4) {
       bool shouldPassToParent = true;
 
       while (shouldPassToParent) {
-        officer = officerUser.parent;
-        officerUser = userMap[officer];
-
-        if (officerUser.rank >= officerRank && (officerUser.rank1Received < 243 || officerUser.self == rootUserAddr)) {
+        if (officerUser.rank >= officerRank && officerUser.rank1Received < 81 && !isBlocked(officer)) {
           User memory upperOfficer = officerUser;
           User memory childOfUpperOfficer = officerUser;
+          require(upperOfficer.parent != address(0), 'address can not be null');
           upperOfficer = userMap[upperOfficer.parent];
           while (upperOfficer.rank < officerRank || isBlocked(upperOfficer.self)) {
             childOfUpperOfficer = upperOfficer;
@@ -500,20 +497,25 @@ contract MaihuolongOrg is Owned {
           }
           if (childOfUpperOfficer.rank1Delivered >= 27) {
             shouldPassToParent = false;
+            return officer;
           } else {
             officer = upperOfficer.self;
             shouldPassToParent = false;
+            return officer;
           }
-          shouldPassToParent = true;
-        } else {
-          shouldPassToParent = true;
+        } else if (officerUser.self == rootUserAddr) {
+          shouldPassToParent = false;
+          return officer;
         }
+        officer = officerUser.parent;
+        officerUser = userMap[officer];
       }
     } else {
-      uint8 count = 0;
-      while (count < officerRank || officerUser.rank < officerRank || isBlocked(officerUser.self)) {
+      uint8 count = 1;
+      while ((count < officerRank && officerUser.self != rootUserAddr) || officerUser.rank < officerRank || isBlocked(officer)) {
         count ++;
-        officerUser = userMap[officerUser.parent];
+        officer = officerUser.parent;
+        officerUser = userMap[officer];
       }
     }
     return officer;
@@ -524,9 +526,9 @@ contract MaihuolongOrg is Owned {
   }
 
   function freezeHashBuild(address _target, uint8 _type) public pure returns (bytes32) {
-    if (_type == 0) {
+    if (_type == 1) {
       return keccak256(abi.encodePacked('7Dfreeze', _target));
-    } else if (_type == 1) {
+    } else if (_type == 2) {
       return keccak256(abi.encodePacked('30Dfreeze', _target));
     } else {
       return keccak256(abi.encodePacked('freeze', _target));
@@ -559,7 +561,7 @@ contract MaihuolongOrg is Owned {
 
   function isBlocked(address _userAddr) public view returns (bool) {
     User memory user = userMap[_userAddr];
-    return user.releaseAt > 0 ? (user.frozen || user.releaseAt < now) : user.frozen;
+    return user.releaseAt > 0 ? (user.releaseAt > now || user.frozen) : user.frozen;
   }
 
   function ecrecoverWrapper (bytes32 _hash, uint8 _v, bytes32 _r, bytes32 _s)

@@ -81,7 +81,7 @@ contract Owned {
 contract MaihuoToken is ERC20Interface, Owned {
   using SafeMath for uint;
 
-  address rewardAddr;
+  address public rewardAddr;
   string public symbol;
   string public  name;
   uint8 public decimals;
