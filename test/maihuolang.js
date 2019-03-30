@@ -45,8 +45,7 @@ contract('Maihuolang', function(accounts) {
     );
   });
 
-  it('set reward address(设置奖励地址)', async function() {
-    await mht.setReward(org.address);
+  it('set reward address(检查奖励地址)', async function() {
     const rewardAddr = await mht.rewardAddr();
     assert.equal(rewardAddr, org.address, 'fail!');
   });
