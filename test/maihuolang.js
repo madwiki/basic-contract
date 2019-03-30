@@ -4,7 +4,7 @@ const Voting = artifacts.require('./Voting.sol');
 var Web3 = require('web3');
 const web3 = new Web3(new Web3.providers.HttpProvider('http://127.0.0.1:7545'));
 
-contract('MaihuolangOrg', function(accounts) {
+contract('Maihuolang', function(accounts) {
   let mht;
   let org;
   let voting;
@@ -22,6 +22,7 @@ contract('MaihuolangOrg', function(accounts) {
   };
   const rootUserAddr = accounts[1];
   const level2user1 = accounts[97];
+  let caseBuyer, caseSeller, caseArbiter;
 
   before(async () => {
     mht = await MaihuoToken.deployed();
@@ -118,6 +119,7 @@ contract('MaihuolangOrg', function(accounts) {
     assert.deepEqual(
       newUser,
       offchainUser({
+        invitor: parentUserAddr,
         parent: parentUserAddr,
         self: newUserAddr,
         rank: 1,
@@ -146,10 +148,10 @@ contract('MaihuolangOrg', function(accounts) {
     const invitor = accounts[10];
     const applicants = accounts.slice(11, 41);
     const invitors = Array(30).fill(invitor);
-    let vArray = [];
-    let rArray = [];
-    let sArray = [];
-    const officer = await org.getOfficer(invitor, 1);
+    const vArray = [];
+    const rArray = [];
+    const sArray = [];
+    const officer = await org.getManager.call('0x0000000000000000000000000000000000000000', invitor, 1);
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
       const iS = await signUpgrade(invitor, applicants[index], 1);
@@ -165,6 +167,7 @@ contract('MaihuolangOrg', function(accounts) {
         applicantUser,
         offchainUser({
           children: applicantUser.children,
+          invitor,
           parent:
             index >= 12
               ? applicants[3 + 9 * Math.floor((index - 12) / 9) + 3 * (index % 3)]
@@ -212,8 +215,6 @@ contract('MaihuolangOrg', function(accounts) {
     let rArray = [];
     let sArray = [];
     for (let index = 0; index < targets.length; index++) {
-      const parent = (await onchainUser(targets[0])).parent;
-      const officer = await org.getOfficer(parent, 5 + index);
       const tS = await signUpgrade(targets[index], targets[index], 5 + index);
       const aS = await signUpgrade(approvers[index], targets[index], 5 + index);
       const oS = await signUpgrade(officers[index], targets[index], 5 + index);
@@ -243,7 +244,7 @@ contract('MaihuolangOrg', function(accounts) {
     let vArray = [];
     let rArray = [];
     let sArray = [];
-    const officer = await org.getOfficer(target, 1);
+    const officer = await org.getManager.call(target, accounts[9], 1);
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
       const iS = await signUpgrade(target, applicants[index], 1);
@@ -257,21 +258,84 @@ contract('MaihuolangOrg', function(accounts) {
     assert.equal(targetUser.rank, 9, 'upgrade fail');
   });
 
-  it('lower sue higher(低级用户制裁高级用户)', async function() {
-    const complainant = accounts[40];
-    const target = accounts[9];
-    // const arbiter = accounts[14];
-    const arbiter = accounts[11];
-    // const arbiter = level2user1;
-    const cSig = await signFreeze(complainant, target, 3);
-    const aSig = await signFreeze(arbiter, target, 3);
-    // const mmm = await onchainUser(arbiter);
-    // const lll = await onchainUser(complainant);
-    // console.log('mmm', mmm);
-    // console.log('lll', lll);
-    await org.freezeUser(target, complainant, arbiter, cSig, aSig, true, false, 3);
+  it('buyer complain higher(买家投诉卖家)', async function() {
+    caseBuyer = accounts[13];
+    caseSeller = await org.getApprover(caseBuyer, 2);
+    caseArbiter = accounts[97];
+    const sellerSig = await signTrade(caseSeller, caseBuyer, caseSeller, 2);
+    const cSig = await signPunishment(caseBuyer, caseSeller, 3);
+    const aSig = await signPunishment(caseArbiter, caseSeller, 3);
+    await org.punishSeller(caseBuyer, caseArbiter, caseSeller, cSig, aSig, 2, sellerSig, 3, true);
+    const caseSellerUser = await onchainUser(caseSeller);
+    const approval = await org.judgedApproval(caseBuyer, caseSeller);
+
+    assert.equal(caseSellerUser.frozen, true, 'freeze fail');
+    assert.equal(approval, true, 'approval fail');
+  });
+
+  it('upgrade after complaint(投诉后的免签名升级)', async function() {
+    const target = accounts[13];
+    const tS = await signUpgrade(target, target, 2);
+    await org.lowRankUpgrade(target, [tS.v, tS.v], [tS.r, tS.r], [tS.s, tS.s]);
     const targetUser = await onchainUser(target);
-    assert.equal(targetUser.frozen, true, 'freeze fail');
+    assert.equal(targetUser.rank, 2, 'rank change fail');
+  });
+
+  it('delegated transfer token for comittees(代转发token创建委员会)', async function() {
+    const origin = accounts[0];
+    const marketing = accounts[99];
+    const committees = accounts.slice(1, 6);
+    const expectedBalances = [
+      web3.utils.toWei('10080', 'ether'),
+      web3.utils.toWei('10020', 'ether'),
+      web3.utils.toWei('10060', 'ether'),
+      web3.utils.toWei('10020', 'ether'),
+      web3.utils.toWei('10020', 'ether'),
+    ];
+    for (let index = 0; index < committees.length; index++) {
+      const sig = await signTx(
+        marketing,
+        committees[index],
+        web3.utils.toWei('10000', 'ether'),
+        web3.utils.toWei('5', 'ether'),
+        index
+      );
+      await mht.delegatedTransfer(
+        sig,
+        committees[index],
+        web3.utils.toWei('10000', 'ether'),
+        web3.utils.toWei('5', 'ether'),
+        index
+      );
+      const balance = await mht.balanceOf(committees[index]);
+      assert.equal(String(balance), expectedBalances[index], 'delegated error' + index);
+    }
+    const mBalance = await mht.balanceOf(marketing);
+    const oBalance = await mht.balanceOf(accounts[0]);
+    assert.equal(mBalance, web3.utils.toWei('99949975', 'ether'), 'delegated error' + marketing);
+    assert.equal(oBalance, web3.utils.toWei('25', 'ether'), 'delegated error' + origin);
+  });
+
+  it('freeze arbiter,downgrade buyer and freeze 7 days,unfreeze seller - review by committees(冻结审核员，降级并冻结买家7日，解冻卖家)', async function() {
+    const vArray = [];
+    const rArray = [];
+    const sArray = [];
+    const committees = accounts.slice(1, 6);
+    for (let index = 0; index < committees.length; index++) {
+      const sigObj = await signReview(committees[index], caseBuyer, caseSeller, 0, false, true, [1, 0, 3]);
+      vArray.push(sigObj.v);
+      rArray.push(sigObj.r);
+      sArray.push(sigObj.s);
+    }
+    await org.committeeReview(caseBuyer, caseSeller, 2, false, true, [1, 0, 3], vArray, rArray, sArray);
+
+    const caseBuyerUser = await onchainUser(caseBuyer);
+    const caseSellerUser = await onchainUser(caseSeller);
+    const caseArbiterUser = await onchainUser(caseArbiter);
+    assert.equal(caseBuyerUser.rank, 1, 'downgrade fail');
+    assert.isAbove(caseBuyerUser.releaseAt, Date.now() / 1000, 'downgrade fail');
+    assert.equal(caseArbiterUser.frozen, true, 'freeze caseArbiter fail');
+    assert.equal(caseSellerUser.frozen, false, 'unfreeze caseSeller fail');
   });
 
   // utils
@@ -286,8 +350,28 @@ contract('MaihuolangOrg', function(accounts) {
     };
   }
 
-  async function signFreeze(signer, target, type) {
-    const bytes = await org.freezeHashBuild(target, type);
+  async function signPunishment(signer, target, type) {
+    const bytes = await org.punishmentHashBuild(target, type);
+    return await web3.eth.sign(bytes, signer);
+  }
+
+  async function signTrade(signer, buyer, seller, rank) {
+    const bytes = await org.tradeHashBuild(buyer, seller, rank);
+    return await web3.eth.sign(bytes, signer);
+  }
+
+  async function signReview(signer, buyer, seller, tradeNonce, shouldUpgrade, shouldDowngrade, types) {
+    const bytes = await org.reviewHashBuild(buyer, seller, tradeNonce, shouldUpgrade, shouldDowngrade, types);
+    const sig = await web3.eth.sign(bytes, signer);
+    return {
+      v: '0x' + sig.slice(130, 132),
+      r: sig.slice(0, 66),
+      s: '0x' + sig.slice(66, 130),
+    };
+  }
+
+  async function signTx(signer, to, tokens, fee, nonce) {
+    const bytes = await mht.delegatedTxHashBuild(to, tokens, fee, nonce);
     return await web3.eth.sign(bytes, signer);
   }
 

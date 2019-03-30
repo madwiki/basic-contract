@@ -9,23 +9,21 @@ contract MaihuolangOrg is Owned {
   address public rootUserAddr;
   address[] public restrictionProofs;
   uint public committeeRestriction = 8000;
-  uint public blockedNonce;
   uint public rewardNonce;
 
-  mapping (address => User) public userMap;
+  mapping(address => User) public userMap;
 
   // 1: ready for upgrade, 2: upgraded
-  mapping (address => uint8) public topRankPermissionMap;
-  mapping (uint => BlockedHistory) public blockedMap;
-
-  struct BlockedHistory {
-    address target;
-    address complainant;
+  mapping(address => uint8) public topRankPermissionMap;
+  // buyer => seller => targetRank => Case
+  mapping(address => mapping(address => mapping(uint16 => Case))) public caseMap;
+  // buyer => seller
+  mapping(address => mapping(address => bool)) public judgedApproval;
+  struct Case {
     address arbiter;
-    uint retrialToken;
-    bool lowerSueHigher;
+    uint reviewToken;
+    bool buyerComplainSeller;
   }
-
   struct User {
     address[] children;
     address parent;
@@ -85,11 +83,12 @@ contract MaihuolangOrg is Owned {
     userMap[_parent].children.push(_target);
   }
 
-  function committeeRetrial(
-    uint _nonce,
+  function committeeReview(
+    address _buyer,
+    address _seller,
+    uint16 _targetRank,
     bool _shouldUpgrade,
     bool _shouldDowngrade,
-    bool _punishment,
     uint8[3] memory _types,
     uint8[5] memory _vArray,
     bytes32[5] memory _rArray,
@@ -97,30 +96,30 @@ contract MaihuolangOrg is Owned {
   ) public {
     uint totalToken;
     for (uint8 index = 0; index < _rArray.length; index++) {
-      bytes32 freezeHash = retrialHashBuild(_nonce, _shouldUpgrade, _shouldDowngrade, _punishment, _types);
-      bytes32 hash = ECRecovery.toEthSignedMessageHash(freezeHash);
+      bytes32 reviewHash = reviewHashBuild(_buyer, _seller, _targetRank, _shouldUpgrade, _shouldDowngrade, _types);
+      bytes32 hash = ECRecovery.toEthSignedMessageHash(reviewHash);
       address member = ecrecoverWrapper(hash, _vArray[index], _rArray[index], _sArray[index]);
       totalToken += mht.balanceOf(member);
       mht.tokenIssue(member);
     }
-    BlockedHistory memory frozenHistory = blockedMap[_nonce];
-    require(totalToken >= frozenHistory.retrialToken, 'token not enough');
-    _changeStatusByType(frozenHistory.target, _types[0]);
-    _changeStatusByType(frozenHistory.complainant, _types[1]);
-    _changeStatusByType(frozenHistory.arbiter, _types[2]);
+    Case memory blockedCase = caseMap[_buyer][_seller][_targetRank];
+    require(blockedCase.arbiter != address(0), 'not exists');
+    require(totalToken >= blockedCase.reviewToken, 'token not enough');
+    _changeStatusByType(_buyer, _types[0]);
+    _changeStatusByType(_seller, _types[1]);
+    _changeStatusByType(blockedCase.arbiter, _types[2]);
     if (_shouldUpgrade) {
-      if (frozenHistory.lowerSueHigher) {
-        userMap[frozenHistory.complainant].rank += 1;
-      } else {
-        userMap[frozenHistory.target].rank += 1;
-      }
+      judgedApproval[_buyer][_seller] = true;
     }
     if (_shouldDowngrade) {
-      if (frozenHistory.lowerSueHigher) {
-        userMap[frozenHistory.complainant].rank -= 1;
+      if (blockedCase.buyerComplainSeller) {
+        if (judgedApproval[_buyer][_seller]) {
+          judgedApproval[_buyer][_seller] = false;
+        } else {
+          userMap[_buyer].rank -= 1;
+        }
       } else {
-        require(userMap[frozenHistory.target].rank >= 1, 'can not downgrade the rank1 user');
-        userMap[frozenHistory.target].rank -= 1;
+        userMap[_seller].frozen = true;
       }
     }
   }
@@ -178,6 +177,7 @@ contract MaihuolangOrg is Owned {
     address parent = matchParent(_invitor);
     require(userMap[_applicant].self == address(0), 'already registered');
     require(_registerCheck(_applicant, _invitor, parent, _vArray, _rArray, _sArray), 'check fail');
+    userMap[_applicant].invitor = _invitor;
     userMap[_applicant].parent = parent;
     userMap[_applicant].self = _applicant;
     userMap[_applicant].rank = 1;
@@ -213,61 +213,97 @@ contract MaihuolangOrg is Owned {
     topRankPermissionMap[_applicant] = 1;
   }
 
-  function freezeUser (
-    address _target,
-    address _complainant,
+  function punishSeller (
+    address _buyer,
     address _arbiter,
-    bytes memory _comSig,
-    bytes memory _arbSig,
-    bool _lowerSueHigher,
-    bool _shouldUpgrade,
-    uint8 _type
+    address _seller,
+    bytes memory _buyerSig,
+    bytes memory _arbiterSig,
+    uint16 _targetRank,
+    bytes memory _tradeSig,
+    uint8 _type,
+    bool _shouldUpgrade
   ) public {
-    User memory targetUser = userMap[_target];
-    User memory complainantUser = userMap[_complainant];
-    require(_type != 0, '0 is not a kind of freezing type');
-    require(targetUser.rank >= 1, 'rank should >= 1');
-    require((_lowerSueHigher && targetUser.rank > complainantUser.rank)
-    || (!_lowerSueHigher && targetUser.rank < complainantUser.rank),
-    'wrong value of lowerSueHigher');
-    // require(!_relative(_target, _arbiter), 'target and arbiter are relative');
-    require(!_relative(_complainant, _arbiter), 'complainant and arbiter are relative');
-    if (_lowerSueHigher) {
-      uint8 targetRank = _shouldUpgrade ? complainantUser.rank + 1 : complainantUser.rank;
-      require(getApprover(_complainant, targetRank) == _target
-        || getOfficer(_complainant, targetRank) == _target);
-    } else {
-      uint8 targetRank = _shouldUpgrade ? complainantUser.rank + 1 : complainantUser.rank;
-      require(getApprover(_target, targetRank) == _complainant
-        || getOfficer(_target, targetRank) == _complainant);
+    require(_punishCheck(_buyer, _arbiter, _seller, _buyerSig, _arbiterSig, _targetRank, _tradeSig, _type, true));
+    if (_shouldUpgrade && userMap[_buyer].rank < _targetRank) {
+      judgedApproval[_buyer][_seller] = true;
     }
-    bytes32 freezeHash = freezeHashBuild(_target, _type);
-    bytes32 hash = ECRecovery.toEthSignedMessageHash(freezeHash);
-    require(_complainant == ECRecovery.recover(hash, _comSig)
-    && _arbiter == ECRecovery.recover(hash, _arbSig)
-    && mht.tokenIssue(_arbiter));
-
-    if (_lowerSueHigher && !_shouldUpgrade) {
-      userMap[_complainant].rank += 1;
-    }
-  
-    _changeStatusByType(_target, _type);
-
-    blockedMap[blockedNonce] = BlockedHistory(
-      _target,
-      _complainant,
+    _punishByType(_seller, _type);
+    caseMap[_buyer][_seller][_targetRank] = Case(
       _arbiter,
       0,
-      _lowerSueHigher
+      true
     );
-    blockedNonce ++;
+  }
+
+  function punishBuyer (
+    address _seller,
+    address _arbiter,
+    address _buyer,
+    bytes memory _sellerSig,
+    bytes memory _arbiterSig,
+    uint16 _targetRank,
+    bytes memory _tradeSig,
+    uint8 _type
+  ) public {
+    require(_punishCheck(_seller, _arbiter, _buyer, _sellerSig, _arbiterSig, _targetRank, _tradeSig, _type, false));
+    _punishByType(_buyer, _type);
+    caseMap[_buyer][_seller][_targetRank] = Case(
+      _arbiter,
+      0,
+      false
+    );
+  }
+
+  function _punishCheck (
+    address _complainant,
+    address _arbiter,
+    address _respondent,
+    bytes memory _comSig,
+    bytes memory _arbSig,
+    uint16 _targetRank,
+    bytes memory _tradeSig,
+    uint8 _type,
+    bool _buyerComplainSeller
+  ) private returns (bool) {
+    User memory targetUser = userMap[_respondent];
+    require(!isBlocked(_arbiter), 'arbiter blocked');
+    require(userMap[_arbiter].rank >= 7, 'arbiter rank');
+    require(targetUser.rank >= 1, 'rank');
+    require(!_relative(_respondent, _arbiter), 'respondent relative');
+    require(!_relative(_complainant, _arbiter), 'complainant relative');
+    bytes32 tradeHash;
+    if (_buyerComplainSeller) {
+      require(caseMap[_complainant][_respondent][_targetRank].arbiter == address(0), 'case already exists');
+      tradeHash = tradeHashBuild(_complainant, _respondent, _targetRank);
+    } else {
+      require(caseMap[_respondent][_complainant][_targetRank].arbiter == address(0), 'case already exists');
+      tradeHash = tradeHashBuild(_respondent, _complainant, _targetRank);
+    }
+    bytes32 tHash = ECRecovery.toEthSignedMessageHash(tradeHash);
+    require(_respondent == ECRecovery.recover(tHash, _tradeSig), 'trade sig');
+
+    bytes32 punishmentHash = punishmentHashBuild(_respondent, _type);
+    bytes32 pHash = ECRecovery.toEthSignedMessageHash(punishmentHash);
+    require(_complainant == ECRecovery.recover(pHash, _comSig)
+    && _arbiter == ECRecovery.recover(pHash, _arbSig), 'pHash sig');
+
+    require(mht.tokenIssue(_arbiter), 'issue');
+    return true;
   }
 
   function _changeStatusByType(address _target, uint8 _type) private {
     if (_type == 0) {
       userMap[_target].releaseAt = 0;
       userMap[_target].frozen = false;
-    } else if (_type == 1) {
+    } else {
+      _punishByType(_target, _type);
+    }
+  }
+
+  function _punishByType(address _target, uint8 _type) private {
+    require(_type > 0);
+    if (_type == 1) {
       userMap[_target].releaseAt = now + 7 days;
     } else if(_type == 2) {
       userMap[_target].releaseAt = now + 30 days;
@@ -287,10 +323,10 @@ contract MaihuolangOrg is Owned {
       higherUser = lowerUser;
       lowerUser = preHigherUser;
     }
-    require(lowerUser.level > higherUser.level, 'xxxx');
+
     User memory upperOfLowerUser = lowerUser;
     for (uint16 index; index < lowerUser.level - higherUser.level; index++) {
-      upperOfLowerUser = userMap[lowerUser.parent];
+      upperOfLowerUser = userMap[upperOfLowerUser.parent];
     }
     return upperOfLowerUser.self == higherUser.self;
   }
@@ -311,13 +347,20 @@ contract MaihuolangOrg is Owned {
     }
     bytes32 upgradeHash = upgradeHashBuild(_applicant, 1);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
-    address officer = _getOfficerWithModify(_parent, 1);
+    address manager = _getManagerWithUpdate(_applicant, _parent, 1);
+
+    bool invitorApproval = judgedApproval[_applicant][_invitor];
+    bool managerApproval = judgedApproval[_applicant][manager];
+    if (invitorApproval) {
+      judgedApproval[_applicant][_invitor] = false;
+    }
+    if (managerApproval) {
+      judgedApproval[_applicant][manager] = false;
+    }
 
     return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && _invitor == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
-      && officer == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2])
-      && _rewardByTx(_invitor)
-      && _rewardByTx(officer);
+      && (invitorApproval || (_invitor == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(_invitor)))
+      && (managerApproval || (manager == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2]) && _rewardByTx(manager)));
   }
 
   function _lowRankUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
@@ -340,10 +383,13 @@ contract MaihuolangOrg is Owned {
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
     address approver = getApprover(_applicant, targetRank);
 
-    return
-    _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-    && approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
-    && _rewardByTx(approver);
+    bool approverApproval = judgedApproval[_applicant][approver];
+    if (approverApproval) {
+      judgedApproval[_applicant][approver] = false;
+    }
+
+    return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
+    && (approverApproval || (approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(approver)));
   }
 
   function _highRankUpgradeCheck(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
@@ -357,14 +403,20 @@ contract MaihuolangOrg is Owned {
     bytes32 upgradeHash = upgradeHashBuild(_applicant, targetRank);
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
     address approver = getApprover(_applicant, targetRank);
-    address officer = _getOfficerWithModify(applicantUser.parent, targetRank);
+    address manager = _getManagerWithUpdate(_applicant, applicantUser.parent, targetRank);
 
-    return
-      _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
-      && officer == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2])
-      && _rewardByTx(approver)
-      && _rewardByTx(officer);
+    bool approverApproval = judgedApproval[_applicant][approver];
+    bool managerApproval = judgedApproval[_applicant][manager];
+    if (approverApproval) {
+      judgedApproval[_applicant][approver] = false;
+    }
+    if (managerApproval) {
+      judgedApproval[_applicant][manager] = false;
+    }
+
+    return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
+      && (approverApproval || (approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(approver)))
+      && (managerApproval || (manager == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2]) && _rewardByTx(manager)));
   }
 
   function _topRankPreUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
@@ -379,9 +431,14 @@ contract MaihuolangOrg is Owned {
     bytes32 hash = ECRecovery.toEthSignedMessageHash(upgradeHash);
     address approver = getApprover(_applicant, targetRank);
 
+    bool approverApproval = judgedApproval[_applicant][approver];
+    if (approverApproval) {
+      judgedApproval[_applicant][approver] = false;
+    }
+
     return
       _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1])
+      && (approverApproval || (approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(approver)))
       && _rewardByTx(approver);
   }
 
@@ -409,9 +466,9 @@ contract MaihuolangOrg is Owned {
 
   function getApprover(address _applicant, uint8 _targetRank) public view returns (address) {
     User memory approverUser = userMap[_applicant];
-    require(approverUser.rank >= 1, 'Rank needed');
+    require(approverUser.rank >= 1, 'rank');
     uint16 count = 0;
-    while(count < _targetRank || approverUser.rank < _targetRank) {
+    while(count < _targetRank || approverUser.rank < _targetRank || !_authority(_applicant, approverUser.self)) {
       if (approverUser.self == rootUserAddr) {
         return approverUser.self;
       }
@@ -421,111 +478,76 @@ contract MaihuolangOrg is Owned {
     return approverUser.self;
   }
 
-  function _getOfficerWithModify(address _parent, uint8 _targetRank) private returns (address) {
+  function _getManager(address _applicant, address _parent, uint8 _targetRank, bool _update) private returns (address) {
     require(_targetRank == 1 || (_targetRank >= 4 && _targetRank < 9));
-    uint8 officerRank = _targetRank == 1
+    uint8 managerRank = _targetRank == 1
     ? 4
     : _targetRank < 7
     ? 7
     : 9;
-    address officer = _parent;
-    User memory officerUser = userMap[officer];
+    address manager = _parent;
+    User memory managerUser = userMap[manager];
 
-    if (officerRank == 4) {
+    if (managerRank == 4) {
       bool shouldPassToParent = true;
 
       while (shouldPassToParent) {
-        if (officerUser.rank >= officerRank && officerUser.rank1Received < 81 && !isBlocked(officer)) {
-          User memory upperOfficer = officerUser;
-          User memory childOfUpperOfficer = officerUser;
-          require(upperOfficer.parent != address(0), 'address can not be null');
-          upperOfficer = userMap[upperOfficer.parent];
-          while (upperOfficer.rank < officerRank || isBlocked(upperOfficer.self)) {
-            childOfUpperOfficer = upperOfficer;
-            upperOfficer = userMap[upperOfficer.parent];
+        if (managerUser.rank >= managerRank && managerUser.rank1Received < 81 && _authority(_applicant ,manager)) {
+          User memory upperManager = managerUser;
+          User memory childOfUpperManager = managerUser;
+          require(upperManager.parent != address(0));
+          upperManager = userMap[upperManager.parent];
+          while (upperManager.rank < managerRank || !_authority(_applicant ,upperManager.self)) {
+            childOfUpperManager = upperManager;
+            upperManager = userMap[upperManager.parent];
           }
-          if (childOfUpperOfficer.rank1Delivered >= 27) {
+          if (childOfUpperManager.rank1Delivered >= 27) {
             shouldPassToParent = false;
-            return officer;
+            return manager;
           } else {
-            userMap[childOfUpperOfficer.self].rank1Delivered += 1;
-            officer = upperOfficer.self;
-            userMap[officer].rank1Received += 1;
+            manager = upperManager.self;
+            if (_update) {
+              userMap[childOfUpperManager.self].rank1Delivered += 1;
+              userMap[manager].rank1Received += 1;
+            }
             shouldPassToParent = false;
-            return officer;
+            return manager;
           }
-        } else if (officerUser.self == rootUserAddr) {
+        } else if (managerUser.self == rootUserAddr) {
           shouldPassToParent = false;
-          return officer;
+          return manager;
         }
-        officer = officerUser.parent;
-        officerUser = userMap[officer];
+        manager = managerUser.parent;
+        managerUser = userMap[manager];
       }
     } else {
       uint8 count = 1;
-      while ((count < officerRank && officerUser.self != rootUserAddr) || officerUser.rank < officerRank || isBlocked(officer)) {
+      while ((count < managerRank && managerUser.self != rootUserAddr) || managerUser.rank < managerRank || !_authority(_applicant ,manager)) {
         count ++;
-        officer = officerUser.parent;
-        officerUser = userMap[officer];
+        manager = managerUser.parent;
+        managerUser = userMap[manager];
       }
     }
-    return officer;
+    return manager;
   }
 
-  function getOfficer(address _parent, uint8 _targetRank) public view returns (address) {
-    require(_targetRank == 1 || (_targetRank >= 4 && _targetRank < 9));
-    uint8 officerRank = _targetRank == 1
-    ? 4
-    : _targetRank < 7
-    ? 7
-    : 9;
-    address officer = _parent;
-    User memory officerUser = userMap[officer];
+  function getManager(address _applicant, address _parent, uint8 _targetRank) public returns (address) {
+    return _getManager(_applicant, _parent, _targetRank, false);
+  }
 
-    if (officerRank == 4) {
-      bool shouldPassToParent = true;
-
-      while (shouldPassToParent) {
-        if (officerUser.rank >= officerRank && officerUser.rank1Received < 81 && !isBlocked(officer)) {
-          User memory upperOfficer = officerUser;
-          User memory childOfUpperOfficer = officerUser;
-          require(upperOfficer.parent != address(0), 'address can not be null');
-          upperOfficer = userMap[upperOfficer.parent];
-          while (upperOfficer.rank < officerRank || isBlocked(upperOfficer.self)) {
-            childOfUpperOfficer = upperOfficer;
-            upperOfficer = userMap[upperOfficer.parent];
-          }
-          if (childOfUpperOfficer.rank1Delivered >= 27) {
-            shouldPassToParent = false;
-            return officer;
-          } else {
-            officer = upperOfficer.self;
-            shouldPassToParent = false;
-            return officer;
-          }
-        } else if (officerUser.self == rootUserAddr) {
-          shouldPassToParent = false;
-          return officer;
-        }
-        officer = officerUser.parent;
-        officerUser = userMap[officer];
-      }
-    } else {
-      uint8 count = 1;
-      while ((count < officerRank && officerUser.self != rootUserAddr) || officerUser.rank < officerRank || isBlocked(officer)) {
-        count ++;
-        officer = officerUser.parent;
-        officerUser = userMap[officer];
-      }
-    }
-    return officer;
+  function _getManagerWithUpdate(address _applicant, address _parent, uint8 _targetRank) private returns (address) {
+    return _getManager(_applicant, _parent, _targetRank, true);
   }
 
   function upgradeHashBuild(address _applicant, uint8 _targetRank) public pure returns (bytes32) {
     return keccak256(abi.encodePacked('upgrade', _applicant, _targetRank));
   }
 
-  function freezeHashBuild(address _target, uint8 _type) public pure returns (bytes32) {
+  function tradeHashBuild(address _buyer, address _seller, uint16 _nonce) public pure returns (bytes32) {
+    return keccak256(abi.encodePacked('trade', _buyer, _seller, _nonce));
+  }
+
+  function punishmentHashBuild(address _target, uint8 _type) public pure returns (bytes32) {
     if (_type == 1) {
       return keccak256(abi.encodePacked('7Dfreeze', _target));
     } else if (_type == 2) {
@@ -564,6 +586,14 @@ contract MaihuolangOrg is Owned {
     return user.releaseAt > 0 ? (user.releaseAt > now || user.frozen) : user.frozen;
   }
 
+  function _authority(address _applicant, address _auditor) private view returns (bool) {
+    if (!isBlocked(_auditor)) {
+      return true;
+    } else {
+      return judgedApproval[_applicant][_auditor];
+    }
+  }
+
   function ecrecoverWrapper (bytes32 _hash, uint8 _v, bytes32 _r, bytes32 _s)
     internal
     pure
@@ -580,14 +610,15 @@ contract MaihuolangOrg is Owned {
     }
   }
 
-  function retrialHashBuild(
-    uint _nonce,
+  function reviewHashBuild(
+    address _buyer,
+    address _seller,
+    uint16 _targetRank,
     bool _shouldUpgrade,
     bool _shouldDowngrade,
-    bool _punishment,
     uint8[3] memory _types
   ) public pure returns (bytes32) {
-    return keccak256(abi.encodePacked('retrial', _nonce, _shouldUpgrade, _shouldDowngrade, _punishment, _types[0], _types[1], _types[2]));
+    return keccak256(abi.encodePacked('review', _buyer, _seller, _targetRank, _shouldUpgrade, _shouldDowngrade, _types[0], _types[1], _types[2]));
   }
 
   function () external payable {

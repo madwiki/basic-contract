@@ -183,9 +183,9 @@ contract MaihuoToken is ERC20Interface, Owned {
     bytes32 hash = ECRecovery.toEthSignedMessageHash(delegatedTxHash);
     
     address from = ECRecovery.recover(hash, _signature);
-    require(_nonce == delegatedNonce[from].add(1), 'invalid nonce');
+    require(_nonce == delegatedNonce[from], 'invalid nonce');
 
-    delegatedNonce[from] = _nonce;
+    delegatedNonce[from] = delegatedNonce[from].add(1);
     balances[from] = balances[from].sub(_tokens).sub(_fee);
     balances[_to] = balances[_to].add(_tokens);
     balances[msg.sender] = balances[msg.sender].add(_fee);
