@@ -183,7 +183,7 @@ contract('Maihuolang', function(accounts) {
     }
   });
 
-  it('upgrade rank1 -> rank2 user(一星升级到三星)', async function() {
+  it('upgrade rank1 -> rank3 user(升级1->3)', async function() {
     const target = accounts[10];
     const approverForR2 = accounts[8];
     const approverForR3 = accounts[7];
