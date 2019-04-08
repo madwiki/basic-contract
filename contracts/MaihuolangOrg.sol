@@ -562,7 +562,7 @@ contract MaihuolangOrg is Owned {
     if (balance == 0) {
       return true;
     }
-    uint tokens = rewardNonce < 2000000
+    uint tokens = rewardNonce < 5000000
       ? 20000000000000000000
       : rewardNonce < 20000000
       ? 10000000000000000000
