@@ -104,7 +104,7 @@ contract('Maihuolang', function(accounts) {
       const childUser = await onchainUser(level2user1);
       assert.fail('Expected throw not received,childUser:' + childUser);
     } catch (error) {
-      assert.equal(error.reason, 'Wrong level', 'Expected not correct');
+      assert.equal(error.reason, 'Level', 'Expected not correct');
     }
   });
 
@@ -113,7 +113,7 @@ contract('Maihuolang', function(accounts) {
     const parentUserAddr = accounts[9];
     const aS = await signUpgrade(newUserAddr, newUserAddr, 1);
     const iS = await signUpgrade(parentUserAddr, newUserAddr, 1);
-    await org.register(newUserAddr, parentUserAddr, [aS.v, iS.v, iS.v], [aS.r, iS.r, iS.r], [aS.s, iS.s, iS.s]);
+    await org.register(newUserAddr, parentUserAddr, aS, iS, iS);
     const newUser = await onchainUser(newUserAddr);
     assert.deepEqual(
       newUser,
@@ -136,31 +136,27 @@ contract('Maihuolang', function(accounts) {
     const tS = await signUpgrade(target, target, 2);
     const aS = await signUpgrade(approver, target, 2);
     try {
-      await org.lowRankUpgrade(target, [tS.v, aS.v], [tS.r, aS.r], [tS.s, aS.s]);
+      await org.lowRankUpgrade(target, tS, aS);
       assert.fail('Expected throw not received,childUser:' + target);
     } catch (error) {
-      assert.equal(error.reason, 'Upgrade Check failed', 'Expected not correct');
+      assert.equal(error.reason, 'Check Fail', 'Expected not correct');
     }
   });
 
-  it('batch register for 30 users(批量注册30个用户)', async function() {
+  it('batch register for 50 users(批量注册50个用户)', async function() {
     const invitor = accounts[10];
-    const applicants = accounts.slice(11, 41);
-    const invitors = Array(30).fill(invitor);
-    const vArray = [];
-    const rArray = [];
-    const sArray = [];
+    const applicants = accounts.slice(11, 61);
+    const invitors = Array(50).fill(invitor);
     const officer = await org.getManager.call('0x0000000000000000000000000000000000000000', invitor, 1);
+    const sigs = [];
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
       const iS = await signUpgrade(invitor, applicants[index], 1);
       const oS = await signUpgrade(officer, applicants[index], 1);
-      vArray.push([aS.v, iS.v, oS.v]);
-      rArray.push([aS.r, iS.r, oS.r]);
-      sArray.push([aS.s, iS.s, oS.s]);
+      sigs.push([aS, iS, oS]);
     }
-    await org.batchUpdate(applicants, invitors, vArray, rArray, sArray, ...Array(8).fill([]));
     for (let index = 0; index < applicants.length; index++) {
+      await org.register(applicants[index], invitors[index], ...sigs[index]);
       const applicantUser = await onchainUser(applicants[index]);
       assert.deepEqual(
         applicantUser,
@@ -190,8 +186,8 @@ contract('Maihuolang', function(accounts) {
     const aS2 = await signUpgrade(approverForR2, target, 2);
     const tS3 = await signUpgrade(target, target, 3);
     const aS3 = await signUpgrade(approverForR3, target, 3);
-    await org.lowRankUpgrade(target, [tS2.v, aS2.v], [tS2.r, aS2.r], [tS2.s, aS2.s]);
-    await org.lowRankUpgrade(target, [tS3.v, aS3.v], [tS3.r, aS3.r], [tS3.s, aS3.s]);
+    await org.lowRankUpgrade(target, tS2, aS2);
+    await org.lowRankUpgrade(target, tS3, aS3);
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 3, 'rank change fail');
   });
@@ -201,7 +197,7 @@ contract('Maihuolang', function(accounts) {
     const approver = accounts[6];
     const tS = await signUpgrade(target, target, 4);
     const aS = await signUpgrade(approver, target, 4);
-    await org.lowRankUpgrade(target, [tS.v, aS.v], [tS.r, aS.r], [tS.s, aS.s]);
+    await org.lowRankUpgrade(target, tS, aS);
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 4, 'rank change fail');
   });
@@ -210,18 +206,12 @@ contract('Maihuolang', function(accounts) {
     const targets = Array(4).fill(accounts[10]);
     const approvers = [accounts[5], accounts[4], accounts[3], accounts[2]];
     const officers = [accounts[3], accounts[3], accounts[1], accounts[1]];
-    let vArray = [];
-    let rArray = [];
-    let sArray = [];
     for (let index = 0; index < targets.length; index++) {
       const tS = await signUpgrade(targets[index], targets[index], 5 + index);
       const aS = await signUpgrade(approvers[index], targets[index], 5 + index);
       const oS = await signUpgrade(officers[index], targets[index], 5 + index);
-      vArray.push([tS.v, aS.v, oS.v]);
-      rArray.push([tS.r, aS.r, oS.r]);
-      sArray.push([tS.s, aS.s, oS.s]);
+      await org.highRankUpgrade(targets[index], tS, aS, oS);
     }
-    await org.batchUpdate(...Array(9).fill([]), targets, vArray, rArray, sArray);
     const targetUser = await onchainUser(targets[0]);
     assert.equal(targetUser.rank, 8, 'rank change fail');
   });
@@ -231,28 +221,22 @@ contract('Maihuolang', function(accounts) {
     const approver = accounts[1];
     const tS = await signUpgrade(target, target, 9);
     const aS = await signUpgrade(approver, target, 9);
-    await org.topRankPreUpgrade(target, [tS.v, aS.v], [tS.r, aS.r], [tS.s, aS.s]);
+    await org.topRankPreUpgrade(target, tS, aS);
     const topRankPermission = await org.topRankPermissionMap(target);
     assert.equal(topRankPermission, 1, 'set top rank permission fail');
   });
 
   it('top rank upgrade(9星升级)', async function() {
     const target = accounts[10];
-    const applicants = accounts.slice(41, 44);
-    const invitors = Array(30).fill(target);
-    let vArray = [];
-    let rArray = [];
-    let sArray = [];
+    const applicants = accounts.slice(62, 65);
+    const invitors = [accounts[41], accounts[44], accounts[47]];
     const officer = await org.getManager.call(target, accounts[9], 1);
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
-      const iS = await signUpgrade(target, applicants[index], 1);
+      const iS = await signUpgrade(invitors[index], applicants[index], 1);
       const oS = await signUpgrade(officer, applicants[index], 1);
-      vArray.push([aS.v, iS.v, oS.v]);
-      rArray.push([aS.r, iS.r, oS.r]);
-      sArray.push([aS.s, iS.s, oS.s]);
+      await org.registerForTopRank(applicants[index], invitors[index], target, aS, iS, oS);
     }
-    await org.batchUpdate(applicants, invitors, vArray, rArray, sArray, ...Array(8).fill([]));
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 9, 'upgrade fail');
   });
@@ -275,7 +259,7 @@ contract('Maihuolang', function(accounts) {
   it('upgrade after complaint(投诉后的免签名升级)', async function() {
     const target = accounts[13];
     const tS = await signUpgrade(target, target, 2);
-    await org.lowRankUpgrade(target, [tS.v, tS.v], [tS.r, tS.r], [tS.s, tS.s]);
+    await org.lowRankUpgrade(target, tS, tS);
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 2, 'rank change fail');
   });
@@ -321,7 +305,7 @@ contract('Maihuolang', function(accounts) {
     const sArray = [];
     const committees = accounts.slice(1, 6);
     for (let index = 0; index < committees.length; index++) {
-      const sigObj = await signReview(committees[index], caseBuyer, caseSeller, 0, false, true, [1, 0, 3]);
+      const sigObj = await signReview(committees[index], caseBuyer, caseSeller, 2, false, true, [1, 0, 3]);
       vArray.push(sigObj.v);
       rArray.push(sigObj.r);
       sArray.push(sigObj.s);
@@ -341,12 +325,7 @@ contract('Maihuolang', function(accounts) {
 
   async function signUpgrade(signer, applicant, targetRank) {
     const bytes = await org.upgradeHashBuild.call(applicant, targetRank);
-    const sig = await web3.eth.sign(bytes, signer);
-    return {
-      v: '0x' + sig.slice(130, 132),
-      r: sig.slice(0, 66),
-      s: '0x' + sig.slice(66, 130),
-    };
+    return await web3.eth.sign(bytes, signer);
   }
 
   async function signPunishment(signer, target, type) {

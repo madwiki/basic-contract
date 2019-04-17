@@ -8,17 +8,18 @@ contract MaihuolangOrg is Owned {
   address public owner;
   address public rootUserAddr;
   address[] public restrictionProofs;
-  uint public committeeRestriction = 8000;
+  uint public committeeRestriction = 8000000000000000000000;
   uint public rewardNonce;
 
-  event UserChange(address indexed user);
+  event UserChanged(address indexed _target, bool _placeholder);
+  event CaseChanged(address indexed _buyer, address indexed _seller, uint8 _targetRank);
 
   mapping(address => User) public userMap;
 
   // 1: ready for upgrade, 2: upgraded
   mapping(address => uint8) public topRankPermissionMap;
   // buyer => seller => targetRank => Case
-  mapping(address => mapping(address => mapping(uint16 => Case))) public caseMap;
+  mapping(address => mapping(address => mapping(uint8 => Case))) public caseMap;
   // buyer => seller
   mapping(address => mapping(address => bool)) public judgedApproval;
   struct Case {
@@ -68,9 +69,9 @@ contract MaihuolangOrg is Owned {
     // can only set the user that the level <= 9
     uint16 parentLevel = userMap[_parent].level;
     uint childrenLength = userMap[_parent].children.length;
-    require(userMap[_target].self == address(0), 'Already exists');
-    require(parentLevel <= 8, 'Wrong level');
-    require(childrenLength < 3, 'children is full');
+    require(userMap[_target].self == address(0));
+    require(parentLevel <= 8, 'Level');
+    require(childrenLength < 3, 'Children Full');
 
     userMap[_target].parent = _parent;
     userMap[_target].self = _target;
@@ -83,13 +84,13 @@ contract MaihuolangOrg is Owned {
       userMap[_target].rank1Received = 81;
     }
     userMap[_parent].children.push(_target);
-    emit UserChange(_target);
+    emit UserChanged(_target, true);
   }
 
   function committeeReview(
     address _buyer,
     address _seller,
-    uint16 _targetRank,
+    uint8 _targetRank,
     bool _shouldUpgrade,
     bool _shouldDowngrade,
     uint8[3] memory _types,
@@ -102,12 +103,15 @@ contract MaihuolangOrg is Owned {
       bytes32 reviewHash = reviewHashBuild(_buyer, _seller, _targetRank, _shouldUpgrade, _shouldDowngrade, _types);
       bytes32 hash = ECRecovery.toEthSignedMessageHash(reviewHash);
       address member = ecrecoverWrapper(hash, _vArray[index], _rArray[index], _sArray[index]);
-      totalToken += mht.balanceOf(member);
+      uint memberBalance = mht.balanceOf(member);
+      require(memberBalance >= committeeRestriction, 'member balance');
+      totalToken += memberBalance;
       mht.tokenIssue(member);
     }
     Case memory blockedCase = caseMap[_buyer][_seller][_targetRank];
-    require(blockedCase.arbiter != address(0), 'not exists');
-    require(totalToken >= blockedCase.reviewToken, 'token not enough');
+    require(totalToken >= blockedCase.reviewToken, 'totalToken');
+    caseMap[_buyer][_seller][_targetRank].reviewToken = totalToken;
+    emit CaseChanged(_buyer, _seller, _targetRank);
     _changeStatusByType(_buyer, _types[0]);
     _changeStatusByType(_seller, _types[1]);
     _changeStatusByType(blockedCase.arbiter, _types[2]);
@@ -120,7 +124,7 @@ contract MaihuolangOrg is Owned {
           judgedApproval[_buyer][_seller] = false;
         } else {
           userMap[_buyer].rank -= 1;
-          emit UserChange(_buyer);
+          emit UserChanged(_buyer, true);
         }
       } else {
         userMap[_seller].frozen = true;
@@ -128,59 +132,33 @@ contract MaihuolangOrg is Owned {
     }
   }
 
-  function updateCommitteeRestriction(address[20] memory _proofs) public {
-    require(msg.sender == owner || userMap[msg.sender].rank == 9);
-    uint minBalance = mht.balanceOf(address(_proofs[0]));
-    for (uint8 index = 1; index < _proofs.length; index++) {
-      uint proofBalance = mht.balanceOf(address(_proofs[index]));
-      if (proofBalance < minBalance) {
-        minBalance = proofBalance;
-      }
-    }
-    if (minBalance > committeeRestriction) {
-      committeeRestriction = minBalance;
-    } else if (restrictionProofs.length == 20) {
-      for (uint8 index = 0; index < restrictionProofs.length; index++) {
-        uint resProofBalance = mht.balanceOf(address(restrictionProofs[index]));
-        if (resProofBalance < minBalance) {
-          committeeRestriction = minBalance;
-          restrictionProofs = _proofs;
-          break;
-        }
-      }
-    }
-  }
+  // function updateCommitteeRestriction(address[20] memory _proofs) public {
+  //   require(msg.sender == owner || userMap[msg.sender].rank == 9);
+  //   uint minBalance = mht.balanceOf(address(_proofs[0]));
+  //   for (uint8 index = 1; index < _proofs.length; index++) {
+  //     uint proofBalance = mht.balanceOf(address(_proofs[index]));
+  //     if (proofBalance < minBalance) {
+  //       minBalance = proofBalance;
+  //     }
+  //   }
+  //   if (minBalance > committeeRestriction) {
+  //     committeeRestriction = minBalance;
+  //   } else if (restrictionProofs.length == 20) {
+  //     for (uint8 index = 0; index < restrictionProofs.length; index++) {
+  //       uint resProofBalance = mht.balanceOf(address(restrictionProofs[index]));
+  //       if (resProofBalance < minBalance) {
+  //         committeeRestriction = minBalance;
+  //         restrictionProofs = _proofs;
+  //         break;
+  //       }
+  //     }
+  //   }
+  // }
 
-  function batchUpdate (
-    address[] memory _registerApplicants,
-    address[] memory _registerInvitors,
-    uint8[3][] memory _vRegisterArray,
-    bytes32[3][] memory _rRegisterArray,
-    bytes32[3][] memory _sRegisterArray,
-    address[] memory _lowRankApplicants,
-    uint8[2][] memory _vLowRankArray,
-    bytes32[2][] memory _rLowRankArray,
-    bytes32[2][] memory _sLowRankArray,
-    address[] memory _highRankApplicants,
-    uint8[3][] memory _vHighRankArray,
-    bytes32[3][] memory _rHighRankArray,
-    bytes32[3][] memory _sHighRankArray
-  ) public {
-    for (uint i = 0; i < _registerApplicants.length; i++) {
-      register(_registerApplicants[i], _registerInvitors[i], _vRegisterArray[i], _rRegisterArray[i], _sRegisterArray[i]);
-    }
-    for (uint i = 0; i < _lowRankApplicants.length; i++) {
-      lowRankUpgrade(_lowRankApplicants[i], _vLowRankArray[i], _rLowRankArray[i], _sLowRankArray[i]);
-    }
-    for (uint i = 0; i < _highRankApplicants.length; i++) {
-      highRankUpgrade(_highRankApplicants[i], _vHighRankArray[i], _rHighRankArray[i], _sHighRankArray[i]);
-    }
-  }
-
-  function register(address _applicant, address _invitor, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
+  function register(address _applicant, address _invitor, bytes memory _aplSig, bytes memory _invSig, bytes memory _mngSig) public {
     address parent = matchParent(_invitor);
-    require(userMap[_applicant].self == address(0), 'already registered');
-    require(_registerCheck(_applicant, _invitor, parent, _vArray, _rArray, _sArray), 'check fail');
+    require(userMap[_applicant].self == address(0), 'Already');
+    require(_registerCheck(_applicant, _invitor, parent, _aplSig, _invSig, _mngSig), 'Check Fail');
     userMap[_applicant].invitor = _invitor;
     userMap[_applicant].parent = parent;
     userMap[_applicant].self = _applicant;
@@ -189,43 +167,44 @@ contract MaihuolangOrg is Owned {
 
     userMap[parent].children.push(_applicant);
   
-    emit UserChange(_applicant);
+    emit UserChanged(_applicant, true);
   }
 
-  function registerForTopRank(address _applicant, address _invitor, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray, address _preTop, uint16 _layerCount) public {
-    register(_applicant, _invitor, _vArray, _rArray, _sArray);
-    address target = _applicant;
-    for (uint16 index = 0; index < _layerCount; index++) {
-      target = userMap[target].parent;
+  function registerForTopRank(address _applicant, address _invitor, address _preTop, bytes memory _aplSig, bytes memory _invSig, bytes memory _mngSig) public {
+    register(_applicant, _invitor, _aplSig, _invSig, _mngSig);
+    address targetPreTop = _applicant;
+    for (uint16 index = 0; index < userMap[_applicant].level - userMap[_preTop].level; index++) {
+      targetPreTop = userMap[targetPreTop].parent;
     }
-    require(target == _preTop);
+    require(targetPreTop == _preTop, 'preTop');
+    require(_relative(_preTop, _invitor) && (userMap[_invitor].level - userMap[_preTop].level >= 5), 'Invitor');
 
-    uint8 preTopRankPermission = topRankPermissionMap[_invitor];
+    uint8 preTopRankPermission = topRankPermissionMap[_preTop];
     if (preTopRankPermission != 0) {
-      if (userMap[_invitor].rank == 8) {
-        if (preTopRankPermission > 3) {
-          userMap[_invitor].rank = 9;
+      if (userMap[_preTop].rank == 8) {
+        if (preTopRankPermission >= 3) {
+          userMap[_preTop].rank = 9;
         } else {
-          topRankPermissionMap[_invitor] = preTopRankPermission + 1;
+          topRankPermissionMap[_preTop] = preTopRankPermission + 1;
         }
       }
     }
   }
 
-  function lowRankUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
-    require(_lowRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
+  function lowRankUpgrade(address _applicant, bytes memory _aplSig, bytes memory _apvSig) public {
+    require(_lowRankUpgradeCheck(_applicant, _aplSig, _apvSig), 'Check Fail');
     userMap[_applicant].rank += 1;
-    emit UserChange(_applicant);
+    emit UserChanged(_applicant, true);
   }
 
-  function highRankUpgrade(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
-    require(_highRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
+  function highRankUpgrade(address _applicant, bytes memory _aplSig, bytes memory _apvSig, bytes memory _mngSig) public {
+    require(_highRankUpgradeCheck(_applicant, _aplSig, _apvSig, _mngSig), 'Check Fail');
     userMap[_applicant].rank += 1;
-    emit UserChange(_applicant);
+    emit UserChanged(_applicant, true);
   }
 
-  function topRankPreUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
-    require(_topRankPreUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
+  function topRankPreUpgrade(address _applicant, bytes memory _aplSig, bytes memory _apvSig) public {
+    require(_topRankPreUpgradeCheck(_applicant, _aplSig, _apvSig), 'Check Fail');
     topRankPermissionMap[_applicant] = 1;
   }
 
@@ -235,7 +214,7 @@ contract MaihuolangOrg is Owned {
     address _seller,
     bytes memory _buyerSig,
     bytes memory _arbiterSig,
-    uint16 _targetRank,
+    uint8 _targetRank,
     bytes memory _tradeSig,
     uint8 _type,
     bool _shouldUpgrade
@@ -250,6 +229,7 @@ contract MaihuolangOrg is Owned {
       0,
       true
     );
+    emit CaseChanged(_buyer, _seller, _targetRank);
   }
 
   function punishBuyer (
@@ -258,7 +238,7 @@ contract MaihuolangOrg is Owned {
     address _buyer,
     bytes memory _sellerSig,
     bytes memory _arbiterSig,
-    uint16 _targetRank,
+    uint8 _targetRank,
     bytes memory _tradeSig,
     uint8 _type
   ) public {
@@ -269,6 +249,7 @@ contract MaihuolangOrg is Owned {
       0,
       false
     );
+    emit CaseChanged(_buyer, _seller, _targetRank);
   }
 
   function _punishCheck (
@@ -277,7 +258,7 @@ contract MaihuolangOrg is Owned {
     address _respondent,
     bytes memory _comSig,
     bytes memory _arbSig,
-    uint16 _targetRank,
+    uint8 _targetRank,
     bytes memory _tradeSig,
     uint8 _type,
     bool _buyerComplainSeller
@@ -312,7 +293,7 @@ contract MaihuolangOrg is Owned {
     if (_type == 0) {
       userMap[_target].releaseAt = 0;
       userMap[_target].frozen = false;
-      emit UserChange(_target);
+      emit UserChanged(_target, true);
     } else {
       _punishByType(_target, _type);
     }
@@ -327,7 +308,7 @@ contract MaihuolangOrg is Owned {
     } else {
       userMap[_target].frozen = true;
     }
-    emit UserChange(_target);
+    emit UserChanged(_target, true);
   }
 
   function _relative(address _addr0, address _addr1) private view returns (bool) {
@@ -359,7 +340,7 @@ contract MaihuolangOrg is Owned {
     return parent;
   }
 
-  function _registerCheck(address _applicant, address _invitor, address _parent, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
+  function _registerCheck(address _applicant, address _invitor, address _parent, bytes memory _aplSig, bytes memory _invSig, bytes memory _mngSig) private returns (bool) {
     if (userMap[_applicant].rank != 0) {
       return false;
     }
@@ -376,12 +357,12 @@ contract MaihuolangOrg is Owned {
       judgedApproval[_applicant][manager] = false;
     }
 
-    return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && (invitorApproval || (_invitor == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(_invitor)))
-      && (managerApproval || (manager == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2]) && _rewardByTx(manager)));
+    return _applicant == ECRecovery.recover(hash, _aplSig)
+      && (invitorApproval || (_invitor == ECRecovery.recover(hash, _invSig) && _rewardByTx(_invitor)))
+      && (managerApproval || (manager == ECRecovery.recover(hash, _mngSig) && _rewardByTx(manager)));
   }
 
-  function _lowRankUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
+  function _lowRankUpgradeCheck(address _applicant, bytes memory _aplSig, bytes memory _apvSig) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
     if (applicantUser.rank == 0 || applicantUser.rank >= 4) {
       return false;
@@ -406,11 +387,11 @@ contract MaihuolangOrg is Owned {
       judgedApproval[_applicant][approver] = false;
     }
 
-    return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-    && (approverApproval || (approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(approver)));
+    return _applicant == ECRecovery.recover(hash, _aplSig)
+    && (approverApproval || (approver == ECRecovery.recover(hash, _apvSig) && _rewardByTx(approver)));
   }
 
-  function _highRankUpgradeCheck(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) private returns (bool) {
+  function _highRankUpgradeCheck(address _applicant, bytes memory _aplSig, bytes memory _apvSig, bytes memory _mngSig) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
     if (applicantUser.rank < 4 || applicantUser.rank >= 8) {
       return false;
@@ -432,12 +413,12 @@ contract MaihuolangOrg is Owned {
       judgedApproval[_applicant][manager] = false;
     }
 
-    return _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && (approverApproval || (approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(approver)))
-      && (managerApproval || (manager == ecrecoverWrapper(hash, _vArray[2], _rArray[2], _sArray[2]) && _rewardByTx(manager)));
+    return _applicant == ECRecovery.recover(hash, _aplSig)
+      && (approverApproval || (approver == ECRecovery.recover(hash, _apvSig) && _rewardByTx(approver)))
+      && (managerApproval || (manager == ECRecovery.recover(hash, _mngSig) && _rewardByTx(manager)));
   }
 
-  function _topRankPreUpgradeCheck(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) private returns (bool) {
+  function _topRankPreUpgradeCheck(address _applicant, bytes memory _aplSig, bytes memory _apvSig) private returns (bool) {
     User memory applicantUser = userMap[_applicant];
     if (applicantUser.rank != 8) {
       return false;
@@ -455,8 +436,8 @@ contract MaihuolangOrg is Owned {
     }
 
     return
-      _applicant == ecrecoverWrapper(hash, _vArray[0], _rArray[0], _sArray[0])
-      && (approverApproval || (approver == ecrecoverWrapper(hash, _vArray[1], _rArray[1], _sArray[1]) && _rewardByTx(approver)))
+      _applicant == ECRecovery.recover(hash, _aplSig)
+      && (approverApproval || (approver == ECRecovery.recover(hash, _apvSig) && _rewardByTx(approver)))
       && _rewardByTx(approver);
   }
 
