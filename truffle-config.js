@@ -1,7 +1,7 @@
 const HDWalletProvider = require('truffle-hdwallet-provider');
 const MNEMONIC = process.env.MNEMONIC;
-const XDAI_NETWORK = process.env.XDAI_NETWORK;
-const SOKOL_NETWORK = process.env.SOKOL_NETWORK;
+const XDAI_NETWORK = process.env.XDAI_HTTP;
+const SOKOL_NETWORK = process.env.SOKOL_HTTP;
 const GAS_LIMIT = 7000000;
 
 module.exports = {
@@ -14,13 +14,13 @@ module.exports = {
   networks: {
     xdai: {
       network_id: 100,
-      provider: () => new HDWalletProvider(MNEMONIC, XDAI_NETWORK),
+      provider: () => new HDWalletProvider(MNEMONIC, XDAI_HTTP),
       gas: GAS_LIMIT,
       gasPrice: 10000000000,
     },
     sokol: {
       network_id: 77,
-      provider: () => new HDWalletProvider(MNEMONIC, SOKOL_NETWORK),
+      provider: () => new HDWalletProvider(MNEMONIC, SOKOL_HTTP),
       gas: GAS_LIMIT,
       gasPrice: 10000000000,
     },

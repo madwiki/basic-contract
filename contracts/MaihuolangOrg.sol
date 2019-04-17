@@ -11,6 +11,8 @@ contract MaihuolangOrg is Owned {
   uint public committeeRestriction = 8000;
   uint public rewardNonce;
 
+  event UserChange(address indexed user);
+
   mapping(address => User) public userMap;
 
   // 1: ready for upgrade, 2: upgraded
@@ -81,6 +83,7 @@ contract MaihuolangOrg is Owned {
       userMap[_target].rank1Received = 81;
     }
     userMap[_parent].children.push(_target);
+    emit UserChange(_target);
   }
 
   function committeeReview(
@@ -117,6 +120,7 @@ contract MaihuolangOrg is Owned {
           judgedApproval[_buyer][_seller] = false;
         } else {
           userMap[_buyer].rank -= 1;
+          emit UserChange(_buyer);
         }
       } else {
         userMap[_seller].frozen = true;
@@ -184,28 +188,40 @@ contract MaihuolangOrg is Owned {
     userMap[_applicant].level = userMap[parent].level + 1;
 
     userMap[parent].children.push(_applicant);
-    
+  
+    emit UserChange(_applicant);
+  }
+
+  function registerForTopRank(address _applicant, address _invitor, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray, address _preTop, uint16 _layerCount) public {
+    register(_applicant, _invitor, _vArray, _rArray, _sArray);
+    address target = _applicant;
+    for (uint16 index = 0; index < _layerCount; index++) {
+      target = userMap[target].parent;
+    }
+    require(target == _preTop);
+
     uint8 preTopRankPermission = topRankPermissionMap[_invitor];
     if (preTopRankPermission != 0) {
       if (userMap[_invitor].rank == 8) {
-        if (preTopRankPermission >= 3) {
+        if (preTopRankPermission > 3) {
           userMap[_invitor].rank = 9;
         } else {
           topRankPermissionMap[_invitor] = preTopRankPermission + 1;
         }
       }
-      
     }
   }
 
   function lowRankUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
     require(_lowRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
     userMap[_applicant].rank += 1;
+    emit UserChange(_applicant);
   }
 
   function highRankUpgrade(address _applicant, uint8[3] memory _vArray, bytes32[3] memory _rArray, bytes32[3] memory _sArray) public {
     require(_highRankUpgradeCheck(_applicant, _vArray, _rArray, _sArray), 'Upgrade Check failed');
     userMap[_applicant].rank += 1;
+    emit UserChange(_applicant);
   }
 
   function topRankPreUpgrade(address _applicant, uint8[2] memory _vArray, bytes32[2] memory _rArray, bytes32[2] memory _sArray) public {
@@ -296,6 +312,7 @@ contract MaihuolangOrg is Owned {
     if (_type == 0) {
       userMap[_target].releaseAt = 0;
       userMap[_target].frozen = false;
+      emit UserChange(_target);
     } else {
       _punishByType(_target, _type);
     }
@@ -310,6 +327,7 @@ contract MaihuolangOrg is Owned {
     } else {
       userMap[_target].frozen = true;
     }
+    emit UserChange(_target);
   }
 
   function _relative(address _addr0, address _addr1) private view returns (bool) {
