@@ -1,7 +1,7 @@
 const HDWalletProvider = require('truffle-hdwallet-provider');
 const MNEMONIC = process.env.MNEMONIC;
-const XDAI_NETWORK = process.env.XDAI_HTTP;
-const SOKOL_NETWORK = process.env.SOKOL_HTTP;
+const XDAI_HTTP = process.env.XDAI_HTTP;
+const SOKOL_HTTP = process.env.SOKOL_HTTP;
 const GAS_LIMIT = 7000000;
 
 module.exports = {
