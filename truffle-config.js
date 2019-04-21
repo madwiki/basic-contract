@@ -24,6 +24,11 @@ module.exports = {
       gas: GAS_LIMIT,
       gasPrice: 10000000000,
     },
+    test: {
+      network_id: 5777,
+      host: "127.0.0.1",
+      port: 7545,
+    }
   },
   compilers: {
     solc: {

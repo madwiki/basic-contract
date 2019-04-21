@@ -49,6 +49,7 @@ contract MaihuolangOrg is Owned {
     userMap[_rootUserAddr].rank1Received = 81;
     userMap[_rootUserAddr].rank1Delivered = 27;
     rootUserAddr = _rootUserAddr;
+    emit UserChanged(_rootUserAddr, true);
   }
 
   function getChildren(address _userAddr) public view returns (address[] memory _children) {
