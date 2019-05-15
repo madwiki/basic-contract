@@ -76,12 +76,15 @@ contract MaihuolangOrg is Owned {
 
     userMap[_target].parent = _parent;
     userMap[_target].self = _target;
-    userMap[_target].rank = parentLevel < 5 ? 9
+    userMap[_target].rank = parentLevel < 6 ? 9
     : parentLevel < 7
-    ? 7 : 5;
+    ? 7
+    : parentLevel < 8
+    ? 4
+    : 1;
     userMap[_target].level = parentLevel + 1;
     userMap[_target].rank1Delivered = 27;
-    if (parentLevel < 8) {
+    if (parentLevel < 7) {
       userMap[_target].rank1Received = 81;
     }
     userMap[_parent].children.push(_target);

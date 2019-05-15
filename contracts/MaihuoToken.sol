@@ -85,6 +85,7 @@ contract MaihuoToken is ERC20Interface, Owned {
   string public symbol;
   string public  name;
   uint8 public decimals;
+  uint _baseUint;
   uint _totalSupply;
 
   mapping(address => uint) balances;
@@ -94,22 +95,25 @@ contract MaihuoToken is ERC20Interface, Owned {
   // ------------------------------------------------------------------------
   // Constructor
   // ------------------------------------------------------------------------
-  constructor(address _team, address _marketing) public {
+  constructor(address _team, address _marketing, address _investor) public {
     symbol = "MHT";
     name = "Maihuo Token";
     decimals = 18;
-    _totalSupply = 1000000000 * 10 ** uint(decimals);
-    uint teamToken = 2 * _totalSupply / 10;
-    uint marketingToken = 1 * _totalSupply / 10;
+    _baseUint= 10000000 * 10 ** uint(decimals);
+    _totalSupply = 150 * _baseUint;
+    uint teamToken = 35 * _baseUint;
+    uint marketingToken = 15 * _baseUint;
+    uint investorToken = 30 * _baseUint;
     balances[_team] = teamToken;
     balances[_marketing] = marketingToken;
+    balances[_investor] = investorToken;
     emit Transfer(address(0), _team, teamToken);
     emit Transfer(address(0), _marketing, marketingToken);
   }
 
   function setReward(address _reward) public onlyOwner {
     require(rewardAddr == address(0), 'reward already set');
-    uint rewardToken = 7 * _totalSupply / 10;
+    uint rewardToken = 7 * _baseUint;
     balances[_reward] = rewardToken;
     rewardAddr = _reward;
     emit Transfer(address(0), owner, rewardToken);
@@ -199,8 +203,8 @@ contract MaihuoToken is ERC20Interface, Owned {
 
   function tokenIssue(address _target) public returns (bool success) {
     require(msg.sender == rewardAddr, 'wrong msg.sender');
-    balances[_target] = balances[_target].add(5000000000000000000);
-    _totalSupply = _totalSupply.add(5000000000000000000);
+    balances[_target] = balances[_target].add(15000000000000000000);
+    _totalSupply = _totalSupply.add(15000000000000000000);
     return true;
   }
 

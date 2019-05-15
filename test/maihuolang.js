@@ -89,13 +89,13 @@ contract('Maihuolang', function(accounts) {
     assert.equal(childUsers[1].rank, 9, 'fail rank at user:' + 1);
     assert.equal(childUsers[2].rank, 9, 'fail rank at user:' + 2);
     assert.equal(childUsers[3].rank, 9, 'fail rank at user:' + 3);
-    assert.equal(childUsers[4].rank, 7, 'fail rank at user:' + 4);
+    assert.equal(childUsers[4].rank, 9, 'fail rank at user:' + 4);
     assert.equal(childUsers[5].rank, 7, 'fail rank at user:' + 5);
-    assert.equal(childUsers[6].rank, 5, 'fail rank at user:' + 6);
-    assert.equal(childUsers[7].rank, 5, 'fail rank at user:' + 7);
+    assert.equal(childUsers[6].rank, 4, 'fail rank at user:' + 6);
+    assert.equal(childUsers[7].rank, 1, 'fail rank at user:' + 7);
 
-    assert.equal(childUsers[6].rank1Received, 81, 'fail rank1Received at user:' + 6);
-    assert.equal(childUsers[7].rank1Received, 0, 'fail rank1Received at user:' + 6);
+    assert.equal(childUsers[6].rank1Received, 0, 'fail rank1Received at user:' + 6);
+    assert.equal(childUsers[7].rank1Received, 0, 'fail rank1Received at user:' + 7);
   });
 
   it('init the user at level10 - should fail(初始化第十层用户 - 应该失败)', async function() {
@@ -110,16 +110,18 @@ contract('Maihuolang', function(accounts) {
 
   it('register user(注册新用户)', async function() {
     const newUserAddr = accounts[10];
-    const parentUserAddr = accounts[9];
+    const invitorUserAddr = accounts[9];
+    const managerUserAddr = accounts[8];
     const aS = await signUpgrade(newUserAddr, newUserAddr, 1);
-    const iS = await signUpgrade(parentUserAddr, newUserAddr, 1);
-    await org.register(newUserAddr, parentUserAddr, aS, iS, iS);
+    const iS = await signUpgrade(invitorUserAddr, newUserAddr, 1);
+    const mS = await signUpgrade(managerUserAddr, newUserAddr, 1);
+    await org.register(newUserAddr, invitorUserAddr, aS, iS, mS);
     const newUser = await onchainUser(newUserAddr);
     assert.deepEqual(
       newUser,
       offchainUser({
-        invitor: parentUserAddr,
-        parent: parentUserAddr,
+        invitor: invitorUserAddr,
+        parent: invitorUserAddr,
         self: newUserAddr,
         rank: 1,
         level: 10,
@@ -127,7 +129,7 @@ contract('Maihuolang', function(accounts) {
       'incorrect new user!'
     );
     const a9Balance = await mht.balanceOf(accounts[9]);
-    assert.equal(a9Balance, web3.utils.toWei('40', 'ether'), 'wrong balance' + a9Balance);
+    assert.equal(a9Balance, web3.utils.toWei('20', 'ether'), 'wrong balance' + a9Balance);
   });
 
   it('upgrade rank1 user with 1 child - should fail(升级只有一个下层的一星用户 - 应该失败)', async function() {
@@ -230,7 +232,7 @@ contract('Maihuolang', function(accounts) {
     const target = accounts[10];
     const applicants = accounts.slice(62, 65);
     const invitors = [accounts[41], accounts[44], accounts[47]];
-    const officer = await org.getManager.call(target, accounts[9], 1);
+    const officer = await org.getManager.call(target, target, 1);
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
       const iS = await signUpgrade(invitors[index], applicants[index], 1);
@@ -295,7 +297,7 @@ contract('Maihuolang', function(accounts) {
     }
     const mBalance = await mht.balanceOf(marketing);
     const oBalance = await mht.balanceOf(accounts[0]);
-    assert.equal(mBalance, web3.utils.toWei('99949975', 'ether'), 'delegated error' + marketing);
+    assert.equal(mBalance, web3.utils.toWei('149949975', 'ether'), 'delegated error' + marketing);
     assert.equal(oBalance, web3.utils.toWei('25', 'ether'), 'delegated error' + origin);
   });
 
