@@ -1,8 +1,8 @@
-const MaihuoToken = artifacts.require('./MaihuoToken.sol');
+const M_ManToken = artifacts.require('./M_ManToken.sol');
 const MaihuolangOrg = artifacts.require('./MaihuolangOrg.sol');
 const Voting = artifacts.require('./Voting.sol');
 const { SOKOL_U1, SOKOL_U2, SOKOL_U3, SOKOL_U4 } = process.env;
-const { DAI_U1, DAI_U2, DAI_U3 } = process.env;
+const { DAI_U1, DAI_U2, DAI_U3, DAI_U4 } = process.env;
 
 module.exports = function(deployer, network, accounts) {
   console.log('////////////network:' + network + '////////////');
@@ -17,16 +17,18 @@ module.exports = function(deployer, network, accounts) {
     teamAddr = SOKOL_U2;
     marketing = SOKOL_U3;
     investor = SOKOL_U4;
-  } else if (network === 'dai-fork' || network === 'dai') {
+  } else if (network === 'xdai-fork' || network === 'xdai') {
     rootUserAddr = DAI_U1;
     teamAddr = DAI_U2;
     marketing = DAI_U3;
+    investor = DAI_U4;
+    console.log('rootUserAddr', rootUserAddr);
   }
-  deployer.deploy(MaihuoToken, teamAddr, marketing, investor).then(() =>
+  deployer.deploy(M_ManToken, teamAddr, marketing, investor).then(() =>
     deployer
-      .deploy(MaihuolangOrg, MaihuoToken.address, rootUserAddr)
-      .then(() => deployer.deploy(Voting, MaihuoToken.address, MaihuolangOrg.address))
-      .then(() => MaihuoToken.deployed())
+      .deploy(MaihuolangOrg, M_ManToken.address, rootUserAddr)
+      .then(() => deployer.deploy(Voting, M_ManToken.address, MaihuolangOrg.address))
+      .then(() => M_ManToken.deployed())
       .then(mht => mht.setReward(MaihuolangOrg.address))
   );
 };

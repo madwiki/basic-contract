@@ -1,4 +1,4 @@
-const MaihuoToken = artifacts.require('./MaihuoToken.sol');
+const M_ManToken = artifacts.require('./M_ManToken.sol');
 const MaihuolangOrg = artifacts.require('./MaihuolangOrg.sol');
 const Voting = artifacts.require('./Voting.sol');
 var Web3 = require('web3');
@@ -25,7 +25,7 @@ contract('Maihuolang', function(accounts) {
   let caseBuyer, caseSeller, caseArbiter;
 
   before(async () => {
-    mht = await MaihuoToken.deployed();
+    mht = await M_ManToken.deployed();
     org = await MaihuolangOrg.deployed();
     voting = await Voting.deployed();
   });

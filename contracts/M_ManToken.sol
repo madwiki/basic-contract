@@ -78,7 +78,7 @@ contract Owned {
 // ERC20 Token, with the addition of symbol, name and decimals and a
 // fixed supply
 // ----------------------------------------------------------------------------
-contract MaihuoToken is ERC20Interface, Owned {
+contract M_ManToken is ERC20Interface, Owned {
   using SafeMath for uint;
 
   address public rewardAddr;
@@ -96,8 +96,8 @@ contract MaihuoToken is ERC20Interface, Owned {
   // Constructor
   // ------------------------------------------------------------------------
   constructor(address _team, address _marketing, address _investor) public {
-    symbol = "MHT";
-    name = "Maihuo Token";
+    symbol = "MMT";
+    name = "M-Man Token";
     decimals = 18;
     _baseUint= 10000000 * 10 ** uint(decimals);
     _totalSupply = 150 * _baseUint;
@@ -109,11 +109,12 @@ contract MaihuoToken is ERC20Interface, Owned {
     balances[_investor] = investorToken;
     emit Transfer(address(0), _team, teamToken);
     emit Transfer(address(0), _marketing, marketingToken);
+    emit Transfer(address(0), _investor, investorToken);
   }
 
   function setReward(address _reward) public onlyOwner {
     require(rewardAddr == address(0), 'reward already set');
-    uint rewardToken = 7 * _baseUint;
+    uint rewardToken = 70 * _baseUint;
     balances[_reward] = rewardToken;
     rewardAddr = _reward;
     emit Transfer(address(0), owner, rewardToken);

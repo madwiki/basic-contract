@@ -4,7 +4,7 @@ import "./Owned.sol";
 import { Token } from "./Token.sol";
 
 contract MaihuolangOrg is Owned {
-  Token mht;
+  Token mmt;
   address public owner;
   address public rootUserAddr;
   address[] public restrictionProofs;
@@ -40,9 +40,9 @@ contract MaihuolangOrg is Owned {
     uint rank1Delivered;
   }
 
-  constructor(address _mht, address _rootUserAddr) public {
+  constructor(address _mmt, address _rootUserAddr) public {
     owner = msg.sender;
-    mht = Token(_mht);
+    mmt = Token(_mmt);
     userMap[_rootUserAddr].self = _rootUserAddr;
     userMap[_rootUserAddr].rank = 9;
     userMap[_rootUserAddr].level = 1;
@@ -71,7 +71,7 @@ contract MaihuolangOrg is Owned {
     uint16 parentLevel = userMap[_parent].level;
     uint childrenLength = userMap[_parent].children.length;
     require(userMap[_target].self == address(0));
-    require(parentLevel <= 8, 'Level');
+    require(parentLevel <= 8 && parentLevel >=1, 'Level');
     require(childrenLength < 3, 'Children Full');
 
     userMap[_target].parent = _parent;
@@ -107,10 +107,10 @@ contract MaihuolangOrg is Owned {
       bytes32 reviewHash = reviewHashBuild(_buyer, _seller, _targetRank, _shouldUpgrade, _shouldDowngrade, _types);
       bytes32 hash = ECRecovery.toEthSignedMessageHash(reviewHash);
       address member = ecrecoverWrapper(hash, _vArray[index], _rArray[index], _sArray[index]);
-      uint memberBalance = mht.balanceOf(member);
+      uint memberBalance = mmt.balanceOf(member);
       require(memberBalance >= committeeRestriction, 'member balance');
       totalToken += memberBalance;
-      mht.tokenIssue(member);
+      mmt.tokenIssue(member);
     }
     Case memory blockedCase = caseMap[_buyer][_seller][_targetRank];
     require(totalToken >= blockedCase.reviewToken, 'totalToken');
@@ -138,9 +138,9 @@ contract MaihuolangOrg is Owned {
 
   // function updateCommitteeRestriction(address[20] memory _proofs) public {
   //   require(msg.sender == owner || userMap[msg.sender].rank == 9);
-  //   uint minBalance = mht.balanceOf(address(_proofs[0]));
+  //   uint minBalance = mmt.balanceOf(address(_proofs[0]));
   //   for (uint8 index = 1; index < _proofs.length; index++) {
-  //     uint proofBalance = mht.balanceOf(address(_proofs[index]));
+  //     uint proofBalance = mmt.balanceOf(address(_proofs[index]));
   //     if (proofBalance < minBalance) {
   //       minBalance = proofBalance;
   //     }
@@ -149,7 +149,7 @@ contract MaihuolangOrg is Owned {
   //     committeeRestriction = minBalance;
   //   } else if (restrictionProofs.length == 20) {
   //     for (uint8 index = 0; index < restrictionProofs.length; index++) {
-  //       uint resProofBalance = mht.balanceOf(address(restrictionProofs[index]));
+  //       uint resProofBalance = mmt.balanceOf(address(restrictionProofs[index]));
   //       if (resProofBalance < minBalance) {
   //         committeeRestriction = minBalance;
   //         restrictionProofs = _proofs;
@@ -289,7 +289,7 @@ contract MaihuolangOrg is Owned {
     require(_complainant == ECRecovery.recover(pHash, _comSig)
     && _arbiter == ECRecovery.recover(pHash, _arbSig), 'pHash sig');
 
-    require(mht.tokenIssue(_arbiter), 'issue');
+    require(mmt.tokenIssue(_arbiter), 'issue');
     return true;
   }
 
@@ -561,7 +561,7 @@ contract MaihuolangOrg is Owned {
   }
 
   function _rewardByTx(address _userAddr) private returns (bool) {
-    uint balance = mht.balanceOf(address(this));
+    uint balance = mmt.balanceOf(address(this));
     if (balance == 0) {
       return true;
     }
@@ -576,9 +576,9 @@ contract MaihuolangOrg is Owned {
       : 1250000000000000000;
 
     if (tokens < balance) {
-      require(mht.transfer(_userAddr, tokens), 'token transferred');
+      require(mmt.transfer(_userAddr, tokens), 'token transferred');
     } else {
-      require(mht.transfer(_userAddr, balance), 'token transferred');
+      require(mmt.transfer(_userAddr, balance), 'token transferred');
     }
     rewardNonce ++;
     return true;
