@@ -1,7 +1,6 @@
 pragma solidity >=0.4.25 <0.6.0;
 import "./zeppelin-solidity/ECRecovery.sol";
 import "./zeppelin-solidity/SafeMath.sol";
-import { Token } from "./Token.sol";
 
 // ----------------------------------------------------------------------------
 // 'FIXED' 'Example Fixed Supply Token' token contract
@@ -79,12 +78,9 @@ contract Owned {
 // ERC20 Token, with the addition of symbol, name and decimals and a
 // fixed supply
 // ----------------------------------------------------------------------------
-contract M_ManToken is ERC20Interface, Owned {
-  Token formerContract;
+contract TestToken is ERC20Interface, Owned {
   using SafeMath for uint;
 
-  address formerRewardAddr;
-  address public inheritFrom;
   address public rewardAddr;
   string public symbol;
   string public  name;
@@ -95,47 +91,33 @@ contract M_ManToken is ERC20Interface, Owned {
   mapping(address => uint) balances;
   mapping(address => mapping(address => uint)) allowed;
   mapping(address => uint) delegatedNonce;
-  mapping(address => bool) public balanceMigrationMap;
-  mapping(address => mapping(address => bool)) public allowanceMigrationMap;
 
   // ------------------------------------------------------------------------
   // Constructor
   // ------------------------------------------------------------------------
-  constructor(address _inheritFrom, address _placeholder) public {
-    inheritFrom = _inheritFrom;
-    formerContract = Token(_inheritFrom);
+  constructor(address _team, address _marketing, address _investor) public {
     symbol = "MMT";
     name = "M-Man Token";
     decimals = 18;
-    formerRewardAddr = formerContract.rewardAddr();
-    uint rewardTokens = formerContract.balanceOf(formerRewardAddr);
-    balances[formerRewardAddr] = rewardTokens;
-    emit Transfer(address(0), formerRewardAddr, rewardTokens);
-    _totalSupply = formerContract.totalSupply();
-  }
-
-  function migrateBalance(address tokenOwner) public {
-    require(!balanceMigrationMap[tokenOwner]);
-    uint tokens = formerContract.balanceOf(tokenOwner);
-    balances[tokenOwner] = tokens;
-    emit Transfer(address(0), tokenOwner, tokens);
-    balanceMigrationMap[tokenOwner] = true;
-  }
-
-
-  function migrateAllowance(address tokenOwner, address spender) public {
-    require(!allowanceMigrationMap[tokenOwner][spender]);
-    allowed[tokenOwner][spender] = formerContract.allowance(tokenOwner, spender);
-    allowanceMigrationMap[tokenOwner][spender] = true;
+    _baseUint= 10000000 * 10 ** uint(decimals);
+    _totalSupply = 150 * _baseUint;
+    uint teamToken = 35 * _baseUint;
+    uint marketingToken = 15 * _baseUint;
+    uint investorToken = 30 * _baseUint;
+    balances[_team] = teamToken;
+    balances[_marketing] = marketingToken;
+    balances[_investor] = investorToken;
+    emit Transfer(address(0), _team, teamToken);
+    emit Transfer(address(0), _marketing, marketingToken);
+    emit Transfer(address(0), _investor, investorToken);
   }
 
   function setReward(address _reward) public onlyOwner {
     require(rewardAddr == address(0), 'reward already set');
-    uint tokens = balances[formerRewardAddr];
-    balances[_reward] = balances[_reward].add(tokens);
-    balances[formerRewardAddr] = 0;
+    uint rewardToken = 70 * _baseUint;
+    balances[_reward] = rewardToken;
     rewardAddr = _reward;
-    emit Transfer(formerRewardAddr, rewardAddr, tokens);
+    emit Transfer(address(0), owner, rewardToken);
   }
 
   // ------------------------------------------------------------------------

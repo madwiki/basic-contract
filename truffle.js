@@ -2,7 +2,7 @@ const HDWalletProvider = require('truffle-hdwallet-provider');
 const MNEMONIC = process.env.DEPLOY_MNEMONIC;
 const XDAI_HTTP = process.env.XDAI_HTTP;
 const SOKOL_HTTP = process.env.SOKOL_HTTP;
-const GAS_LIMIT = 7000000;
+const GAS_LIMIT = 6700000;
 
 module.exports = {
   // Uncommenting the defaults below
@@ -26,9 +26,9 @@ module.exports = {
     },
     test: {
       network_id: 5777,
-      host: "127.0.0.1",
+      host: '127.0.0.1',
       port: 7545,
-    }
+    },
   },
   compilers: {
     solc: {

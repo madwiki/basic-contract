@@ -2,12 +2,10 @@ pragma solidity >=0.4.25 <0.6.0;
 import "./zeppelin-solidity/ECRecovery.sol";
 import "./Owned.sol";
 import { Token } from "./Token.sol";
-import { Org } from "./Org.sol";
 
-contract MaihuolangOrg is Owned {
+contract TestOrg is Owned {
   Token mmt;
-  Org formerContract;
-  address public inheritFrom;
+  address public owner;
   address public rootUserAddr;
   address[] public restrictionProofs;
   uint public committeeRestriction = 8000000000000000000000;
@@ -17,7 +15,6 @@ contract MaihuolangOrg is Owned {
   event CaseChanged(address indexed _buyer, address indexed _seller, uint8 _targetRank);
 
   mapping(address => User) public userMap;
-  mapping(address => address[]) public childrenMap;
 
   // 1: ready for upgrade, 2: upgraded
   mapping(address => uint8) public topRankPermissionMap;
@@ -31,6 +28,7 @@ contract MaihuolangOrg is Owned {
     bool buyerComplainSeller;
   }
   struct User {
+    address[] children;
     address parent;
     address self;
     address invitor;
@@ -42,27 +40,20 @@ contract MaihuolangOrg is Owned {
     uint rank1Delivered;
   }
 
-  constructor(address _inheritFrom, address _mmt) public {
+  constructor(address _mmt, address _rootUserAddr) public {
+    owner = msg.sender;
     mmt = Token(_mmt);
-    inheritFrom = _inheritFrom;
-    formerContract = Org(_inheritFrom);
-    rootUserAddr = formerContract.rootUserAddr();
-    rewardNonce = formerContract.rewardNonce();
-  }
-
-  function migrateUser(address _userAddr) public {
-    require(userMap[_userAddr].self == address(0));
-    (address parent, address self, address invitor, uint8 rank, uint16 level, bool frozen, uint releaseAt, uint rank1Received, uint rank1Delivered) = formerContract.userMap(_userAddr);
-    userMap[_userAddr] = User(parent, self, invitor, rank, level, frozen, releaseAt, rank1Received, rank1Delivered);
-    childrenMap[_userAddr] = formerContract.getChildren(_userAddr);
-    if (formerContract.topRankPermissionMap(_userAddr) > 0) {
-      topRankPermissionMap[_userAddr] = formerContract.topRankPermissionMap(_userAddr);
-    }
-    emit UserChanged(_userAddr, true);
+    userMap[_rootUserAddr].self = _rootUserAddr;
+    userMap[_rootUserAddr].rank = 9;
+    userMap[_rootUserAddr].level = 1;
+    userMap[_rootUserAddr].rank1Received = 81;
+    userMap[_rootUserAddr].rank1Delivered = 27;
+    rootUserAddr = _rootUserAddr;
+    emit UserChanged(_rootUserAddr, true);
   }
 
   function getChildren(address _userAddr) public view returns (address[] memory _children) {
-    _children = childrenMap[_userAddr];
+    _children = userMap[_userAddr].children;
   }
 
   function getUserRank(address _userAddr) public view returns(uint8) {
@@ -78,7 +69,7 @@ contract MaihuolangOrg is Owned {
   function initUser(address _parent, address _target) public onlyOwner {
     // can only set the user that the level <= 9
     uint16 parentLevel = userMap[_parent].level;
-    uint childrenLength = childrenMap[_parent].length;
+    uint childrenLength = userMap[_parent].children.length;
     require(userMap[_target].self == address(0));
     require(parentLevel <= 8 && parentLevel >=1, 'Level');
     require(childrenLength < 3, 'Children Full');
@@ -96,7 +87,7 @@ contract MaihuolangOrg is Owned {
     if (parentLevel < 7) {
       userMap[_target].rank1Received = 81;
     }
-    childrenMap[_parent].push(_target);
+    userMap[_parent].children.push(_target);
     emit UserChanged(_target, true);
   }
 
@@ -177,7 +168,9 @@ contract MaihuolangOrg is Owned {
     userMap[_applicant].self = _applicant;
     userMap[_applicant].rank = 1;
     userMap[_applicant].level = userMap[parent].level + 1;
-    childrenMap[parent].push(_applicant);
+
+    userMap[parent].children.push(_applicant);
+  
     emit UserChanged(_applicant, true);
   }
 
@@ -343,10 +336,10 @@ contract MaihuolangOrg is Owned {
 
   function matchParent(address _invitor) public view returns (address) {
     address parent = _invitor;
-    while (childrenMap[parent].length == 3) {
-      parent = childrenMap[childrenMap[parent][2]].length < childrenMap[childrenMap[parent][1]].length ?
-      childrenMap[parent][2] : childrenMap[childrenMap[parent][1]].length < childrenMap[childrenMap[parent][0]].length
-      ? childrenMap[parent][1] : childrenMap[parent][0];
+    while (userMap[parent].children.length == 3) {
+      parent = userMap[userMap[parent].children[2]].children.length < userMap[userMap[parent].children[1]].children.length ?
+      userMap[parent].children[2] : userMap[userMap[parent].children[1]].children.length < userMap[userMap[parent].children[0]].children.length
+      ? userMap[parent].children[1] : userMap[parent].children[0];
     }
     return parent;
   }
@@ -381,7 +374,7 @@ contract MaihuolangOrg is Owned {
 
     uint8 targetRank = applicantUser.rank + 1;
 
-    if (targetRank == 2 && childrenMap[_applicant].length != 3) {
+    if (targetRank == 2 && applicantUser.children.length != 3) {
       return false;
     }
 
@@ -459,9 +452,9 @@ contract MaihuolangOrg is Owned {
 
   function _userLoop(User memory _currentUser, uint16 _count, uint16 _targetCount) private view returns (uint16) {
     uint16 count = _count;
-    if (childrenMap[_currentUser.self].length > 0) {
-      for (uint8 index = 0; index < childrenMap[_currentUser.self].length; index++) {
-        User memory childUser = userMap[childrenMap[_currentUser.self][index]];
+    if (_currentUser.children.length > 0) {
+      for (uint8 index = 0; index < _currentUser.children.length; index++) {
+        User memory childUser = userMap[_currentUser.children[index]];
         if (childUser.rank >= 1) {
           count ++;
         }
@@ -497,22 +490,24 @@ contract MaihuolangOrg is Owned {
     : 9;
     address manager = _parent;
     User memory managerUser = userMap[manager];
+
     if (managerRank == 4) {
       bool shouldPassToParent = true;
+
       while (shouldPassToParent) {
-        if (managerUser.rank1Received < 81 && _authority(_applicant ,manager)) {
+        if (managerUser.rank >= managerRank && managerUser.rank1Received < 81 && _authority(_applicant ,manager)) {
           User memory upperManager = managerUser;
           User memory childOfUpperManager = managerUser;
           require(upperManager.parent != address(0));
           upperManager = userMap[upperManager.parent];
-          if (childOfUpperManager.rank1Delivered >= 27 && _isNewUserManager(childOfUpperManager.rank, childOfUpperManager.rank1Received)) {
+          while (upperManager.rank < managerRank || !_authority(_applicant ,upperManager.self)) {
+            childOfUpperManager = upperManager;
+            upperManager = userMap[upperManager.parent];
+          }
+          if (childOfUpperManager.rank1Delivered >= 27) {
             shouldPassToParent = false;
             return manager;
           } else {
-            while (!_isNewUserManager(upperManager.rank, upperManager.rank1Received) || !_authority(_applicant ,upperManager.self)) {
-              childOfUpperManager = upperManager;
-              upperManager = userMap[upperManager.parent];
-            }
             manager = upperManager.self;
             if (_update) {
               userMap[childOfUpperManager.self].rank1Delivered += 1;
@@ -537,10 +532,6 @@ contract MaihuolangOrg is Owned {
       }
     }
     return manager;
-  }
-
-  function _isNewUserManager(uint8 rank, uint rank1Received) private pure returns (bool) {
-    return rank >= 4 + rank1Received / 20;
   }
 
   function getManager(address _applicant, address _parent, uint8 _targetRank) public returns (address) {

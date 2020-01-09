@@ -1,6 +1,8 @@
 pragma solidity >=0.4.25 <0.6.0;
 
 contract Token {
+    address public rewardAddr;
+    mapping(address => uint) delegatedNonce;
     /// @param _owner The address from which the balance will be retrieved
     /// @return The balance
     function balanceOf(address _owner) public view returns (uint balance) {}
@@ -10,11 +12,11 @@ contract Token {
     /// @param _value The amount of token to be transferred
     /// @return Whether the transfer was successful or not
     function transfer(address _to, uint _value) public returns (bool success) {}
-
+    function totalSupply() public view returns (uint) {}
+    function allowance(address tokenOwner, address spender) public view returns (uint remaining) {}
     function delegatedTransfer(bytes memory _signature, address _to, uint _tokens, uint _fee, uint _nonce) public returns (bool success) {}
 
     function tokenIssue(address _target) public returns (bool success) {}
-
     event Transfer(address indexed _from, address indexed _to, uint _value);
     event Approval(address indexed _owner, address indexed _spender, uint _value);
 }

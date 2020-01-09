@@ -1,3 +1,5 @@
+const TestToken = artifacts.require('./TestToken.sol');
+const TestOrg = artifacts.require('./TestOrg.sol');
 const M_ManToken = artifacts.require('./M_ManToken.sol');
 const MaihuolangOrg = artifacts.require('./MaihuolangOrg.sol');
 const Voting = artifacts.require('./Voting.sol');
@@ -5,8 +7,10 @@ var Web3 = require('web3');
 const web3 = new Web3(new Web3.providers.HttpProvider('http://127.0.0.1:7545'));
 
 contract('Maihuolang', function(accounts) {
-  let mht;
-  let org;
+  let formerMMt;
+  let formerOrg;
+  let newMMt;
+  let newOrg;
   let voting;
   const userModel = {
     children: [],
@@ -25,8 +29,10 @@ contract('Maihuolang', function(accounts) {
   let caseBuyer, caseSeller, caseArbiter;
 
   before(async () => {
-    mht = await M_ManToken.deployed();
-    org = await MaihuolangOrg.deployed();
+    formerMMt = await TestToken.deployed();
+    formerOrg = await TestOrg.deployed();
+    newMMt = await M_ManToken.deployed();
+    newOrg = await MaihuolangOrg.deployed();
     voting = await Voting.deployed();
   });
 
@@ -46,12 +52,12 @@ contract('Maihuolang', function(accounts) {
   });
 
   it('set reward address(检查奖励地址)', async function() {
-    const rewardAddr = await mht.rewardAddr();
-    assert.equal(rewardAddr, org.address, 'fail!');
+    const rewardAddr = await formerMMt.rewardAddr();
+    assert.equal(rewardAddr, formerOrg.address, 'fail!');
   });
 
   it('init user(初始化用户，确认等级)', async function() {
-    await org.initUser(rootUserAddr, level2user1);
+    await formerOrg.initUser(rootUserAddr, level2user1);
     const childUser = await onchainUser(level2user1);
     assert.deepEqual(
       offchainUser({
@@ -70,10 +76,10 @@ contract('Maihuolang', function(accounts) {
   it('batch init user by one line(批量初始化一条用户线)', async function() {
     const parents = accounts.slice(1, 9);
     const targets = accounts.slice(2, 10);
-    await org.batchInitUsers(parents, targets);
+    await formerOrg.batchInitUsers(parents, targets);
     const childUsers = [];
     for (let index = 0; index < targets.length; index++) {
-      childUsers[index] = await org.userMap(targets[index]);
+      childUsers[index] = await formerOrg.userMap(targets[index]);
       assert.equal(childUsers[index].parent, parents[index], 'fail parent:' + childUsers[index]);
     }
     assert.equal(childUsers[0].level, 2, 'fail level at user:' + 0);
@@ -100,7 +106,7 @@ contract('Maihuolang', function(accounts) {
 
   it('init the user at level10 - should fail(初始化第十层用户 - 应该失败)', async function() {
     try {
-      await org.initUser(accounts[9], accounts[10]);
+      await formerOrg.initUser(accounts[9], accounts[10]);
       const childUser = await onchainUser(level2user1);
       assert.fail('Expected throw not received,childUser:' + childUser);
     } catch (error) {
@@ -115,7 +121,7 @@ contract('Maihuolang', function(accounts) {
     const aS = await signUpgrade(newUserAddr, newUserAddr, 1);
     const iS = await signUpgrade(invitorUserAddr, newUserAddr, 1);
     const mS = await signUpgrade(managerUserAddr, newUserAddr, 1);
-    await org.register(newUserAddr, invitorUserAddr, aS, iS, mS);
+    await formerOrg.register(newUserAddr, invitorUserAddr, aS, iS, mS);
     const newUser = await onchainUser(newUserAddr);
     assert.deepEqual(
       newUser,
@@ -128,7 +134,7 @@ contract('Maihuolang', function(accounts) {
       }),
       'incorrect new user!'
     );
-    const a9Balance = await mht.balanceOf(accounts[9]);
+    const a9Balance = await formerMMt.balanceOf(accounts[9]);
     assert.equal(a9Balance, web3.utils.toWei('20', 'ether'), 'wrong balance' + a9Balance);
   });
 
@@ -138,7 +144,7 @@ contract('Maihuolang', function(accounts) {
     const tS = await signUpgrade(target, target, 2);
     const aS = await signUpgrade(approver, target, 2);
     try {
-      await org.lowRankUpgrade(target, tS, aS);
+      await formerOrg.lowRankUpgrade(target, tS, aS);
       assert.fail('Expected throw not received,childUser:' + target);
     } catch (error) {
       assert.equal(error.reason, 'Check Fail', 'Expected not correct');
@@ -149,7 +155,7 @@ contract('Maihuolang', function(accounts) {
     const invitor = accounts[10];
     const applicants = accounts.slice(11, 61);
     const invitors = Array(50).fill(invitor);
-    const officer = await org.getManager.call('0x0000000000000000000000000000000000000000', invitor, 1);
+    const officer = await formerOrg.getManager.call('0x0000000000000000000000000000000000000000', invitor, 1);
     const sigs = [];
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
@@ -158,7 +164,7 @@ contract('Maihuolang', function(accounts) {
       sigs.push([aS, iS, oS]);
     }
     for (let index = 0; index < applicants.length; index++) {
-      await org.register(applicants[index], invitors[index], ...sigs[index]);
+      await formerOrg.register(applicants[index], invitors[index], ...sigs[index]);
       const applicantUser = await onchainUser(applicants[index]);
       assert.deepEqual(
         applicantUser,
@@ -188,8 +194,8 @@ contract('Maihuolang', function(accounts) {
     const aS2 = await signUpgrade(approverForR2, target, 2);
     const tS3 = await signUpgrade(target, target, 3);
     const aS3 = await signUpgrade(approverForR3, target, 3);
-    await org.lowRankUpgrade(target, tS2, aS2);
-    await org.lowRankUpgrade(target, tS3, aS3);
+    await formerOrg.lowRankUpgrade(target, tS2, aS2);
+    await formerOrg.lowRankUpgrade(target, tS3, aS3);
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 3, 'rank change fail');
   });
@@ -199,7 +205,7 @@ contract('Maihuolang', function(accounts) {
     const approver = accounts[6];
     const tS = await signUpgrade(target, target, 4);
     const aS = await signUpgrade(approver, target, 4);
-    await org.lowRankUpgrade(target, tS, aS);
+    await formerOrg.lowRankUpgrade(target, tS, aS);
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 4, 'rank change fail');
   });
@@ -212,7 +218,7 @@ contract('Maihuolang', function(accounts) {
       const tS = await signUpgrade(targets[index], targets[index], 5 + index);
       const aS = await signUpgrade(approvers[index], targets[index], 5 + index);
       const oS = await signUpgrade(officers[index], targets[index], 5 + index);
-      await org.highRankUpgrade(targets[index], tS, aS, oS);
+      await formerOrg.highRankUpgrade(targets[index], tS, aS, oS);
     }
     const targetUser = await onchainUser(targets[0]);
     assert.equal(targetUser.rank, 8, 'rank change fail');
@@ -223,8 +229,8 @@ contract('Maihuolang', function(accounts) {
     const approver = accounts[1];
     const tS = await signUpgrade(target, target, 9);
     const aS = await signUpgrade(approver, target, 9);
-    await org.topRankPreUpgrade(target, tS, aS);
-    const topRankPermission = await org.topRankPermissionMap(target);
+    await formerOrg.topRankPreUpgrade(target, tS, aS);
+    const topRankPermission = await formerOrg.topRankPermissionMap(target);
     assert.equal(topRankPermission, 1, 'set top rank permission fail');
   });
 
@@ -232,12 +238,12 @@ contract('Maihuolang', function(accounts) {
     const target = accounts[10];
     const applicants = accounts.slice(62, 65);
     const invitors = [accounts[41], accounts[44], accounts[47]];
-    const officer = await org.getManager.call(target, target, 1);
+    const officer = await formerOrg.getManager.call(target, target, 1);
     for (let index = 0; index < applicants.length; index++) {
       const aS = await signUpgrade(applicants[index], applicants[index], 1);
       const iS = await signUpgrade(invitors[index], applicants[index], 1);
       const oS = await signUpgrade(officer, applicants[index], 1);
-      await org.registerForTopRank(applicants[index], invitors[index], target, aS, iS, oS);
+      await formerOrg.registerForTopRank(applicants[index], invitors[index], target, aS, iS, oS);
     }
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 9, 'upgrade fail');
@@ -245,14 +251,14 @@ contract('Maihuolang', function(accounts) {
 
   it('buyer complain higher(买家投诉卖家)', async function() {
     caseBuyer = accounts[13];
-    caseSeller = await org.getApprover(caseBuyer, 2);
+    caseSeller = await formerOrg.getApprover(caseBuyer, 2);
     caseArbiter = accounts[97];
     const sellerSig = await signTrade(caseSeller, caseBuyer, caseSeller, 2);
     const cSig = await signPunishment(caseBuyer, caseSeller, 3);
     const aSig = await signPunishment(caseArbiter, caseSeller, 3);
-    await org.punishSeller(caseBuyer, caseArbiter, caseSeller, cSig, aSig, 2, sellerSig, 3, true);
+    await formerOrg.punishSeller(caseBuyer, caseArbiter, caseSeller, cSig, aSig, 2, sellerSig, 3, true);
     const caseSellerUser = await onchainUser(caseSeller);
-    const approval = await org.judgedApproval(caseBuyer, caseSeller);
+    const approval = await formerOrg.judgedApproval(caseBuyer, caseSeller);
 
     assert.equal(caseSellerUser.frozen, true, 'freeze fail');
     assert.equal(approval, true, 'approval fail');
@@ -261,7 +267,7 @@ contract('Maihuolang', function(accounts) {
   it('upgrade after complaint(投诉后的免签名升级)', async function() {
     const target = accounts[13];
     const tS = await signUpgrade(target, target, 2);
-    await org.lowRankUpgrade(target, tS, tS);
+    await formerOrg.lowRankUpgrade(target, tS, tS);
     const targetUser = await onchainUser(target);
     assert.equal(targetUser.rank, 2, 'rank change fail');
   });
@@ -285,18 +291,18 @@ contract('Maihuolang', function(accounts) {
         web3.utils.toWei('5', 'ether'),
         index
       );
-      await mht.delegatedTransfer(
+      await formerMMt.delegatedTransfer(
         sig,
         committees[index],
         web3.utils.toWei('10000', 'ether'),
         web3.utils.toWei('5', 'ether'),
         index
       );
-      const balance = await mht.balanceOf(committees[index]);
+      const balance = await formerMMt.balanceOf(committees[index]);
       assert.equal(String(balance), expectedBalances[index], 'delegated error' + index);
     }
-    const mBalance = await mht.balanceOf(marketing);
-    const oBalance = await mht.balanceOf(accounts[0]);
+    const mBalance = await formerMMt.balanceOf(marketing);
+    const oBalance = await formerMMt.balanceOf(accounts[0]);
     assert.equal(mBalance, web3.utils.toWei('149949975', 'ether'), 'delegated error' + marketing);
     assert.equal(oBalance, web3.utils.toWei('25', 'ether'), 'delegated error' + origin);
   });
@@ -312,7 +318,7 @@ contract('Maihuolang', function(accounts) {
       rArray.push(sigObj.r);
       sArray.push(sigObj.s);
     }
-    await org.committeeReview(caseBuyer, caseSeller, 2, false, true, [1, 0, 3], vArray, rArray, sArray);
+    await formerOrg.committeeReview(caseBuyer, caseSeller, 2, false, true, [1, 0, 3], vArray, rArray, sArray);
 
     const caseBuyerUser = await onchainUser(caseBuyer);
     const caseSellerUser = await onchainUser(caseSeller);
@@ -323,25 +329,67 @@ contract('Maihuolang', function(accounts) {
     assert.equal(caseSellerUser.frozen, false, 'unfreeze caseSeller fail');
   });
 
+  it('migrate user(跨合约迁移用户)', async function() {
+    // const formerChainUser = await onchainUser(target);
+    // const newChainUser = await onNewChainUser(target);
+    // console.log('targetUser', newChainUser);
+    for (let index = 1; index <= 10; index++) {
+      const target = accounts[index];
+      await await newOrg.migrateUser(target);
+      const newChainUser = await onNewChainUser(target);
+      console.log('newChainUser', index, newChainUser);
+    }
+    // assert.equal(newChainUser.rank, formerChainUser.rank);
+  });
+
+  it('register user on new contract(新合约上注册新用户)', async function() {
+    const newUserAddr = accounts[88];
+    const managerUserAddr = accounts[8];
+    const aS = await signUpgrade(newUserAddr, newUserAddr, 1);
+    const iS = await signUpgrade(managerUserAddr, newUserAddr, 1);
+    const mS = await signUpgrade(managerUserAddr, newUserAddr, 1);
+    const manager = await newOrg.getManager.call(newUserAddr, managerUserAddr, 1);
+    console.log('manager//--', manager);
+    await newOrg.register(newUserAddr, managerUserAddr, aS, iS, mS);
+    const newUser = await onNewChainUser(newUserAddr);
+    console.log('newUser', newUser);
+    // assert.deepEqual(
+    //   newUser,
+    //   offchainUser({
+    //     invitor: invitorUserAddr,
+    //     parent: invitorUserAddr,
+    //     self: newUserAddr,
+    //     rank: 1,
+    //     level: 9,
+    //   }),
+    //   'incorrect new user!'
+    // );
+    // const a9Balance = await formerMMt.balanceOf(accounts[9]);
+    // assert.equal(a9Balance, web3.utils.toWei('20', 'ether'), 'wrong balance' + a9Balance);
+
+    // const manager = await newOrg.getManager.call(newUserAddr, managerUserAddr, 1);
+    // console.log('manager//--', manager);
+  });
+
   // utils
 
   async function signUpgrade(signer, applicant, targetRank) {
-    const bytes = await org.upgradeHashBuild.call(applicant, targetRank);
+    const bytes = await formerOrg.upgradeHashBuild.call(applicant, targetRank);
     return await web3.eth.sign(bytes, signer);
   }
 
   async function signPunishment(signer, target, type) {
-    const bytes = await org.punishmentHashBuild(target, type);
+    const bytes = await formerOrg.punishmentHashBuild(target, type);
     return await web3.eth.sign(bytes, signer);
   }
 
   async function signTrade(signer, buyer, seller, rank) {
-    const bytes = await org.tradeHashBuild(buyer, seller, rank);
+    const bytes = await formerOrg.tradeHashBuild(buyer, seller, rank);
     return await web3.eth.sign(bytes, signer);
   }
 
   async function signReview(signer, buyer, seller, tradeNonce, shouldUpgrade, shouldDowngrade, types) {
-    const bytes = await org.reviewHashBuild(buyer, seller, tradeNonce, shouldUpgrade, shouldDowngrade, types);
+    const bytes = await formerOrg.reviewHashBuild(buyer, seller, tradeNonce, shouldUpgrade, shouldDowngrade, types);
     const sig = await web3.eth.sign(bytes, signer);
     return {
       v: '0x' + sig.slice(130, 132),
@@ -351,7 +399,7 @@ contract('Maihuolang', function(accounts) {
   }
 
   async function signTx(signer, to, tokens, fee, nonce) {
-    const bytes = await mht.delegatedTxHashBuild(to, tokens, fee, nonce);
+    const bytes = await formerMMt.delegatedTxHashBuild(to, tokens, fee, nonce);
     return await web3.eth.sign(bytes, signer);
   }
 
@@ -360,8 +408,25 @@ contract('Maihuolang', function(accounts) {
   }
 
   async function onchainUser(userAddr) {
-    const userMainPart = await org.userMap(userAddr);
-    const userChildren = await org.getChildren(userAddr);
+    const userMainPart = await formerOrg.userMap(userAddr);
+    const userChildren = await formerOrg.getChildren(userAddr);
+    return {
+      children: userChildren,
+      parent: userMainPart.parent,
+      self: userMainPart.self,
+      invitor: userMainPart.invitor,
+      rank: Number(userMainPart.rank),
+      level: Number(userMainPart.level),
+      frozen: userMainPart.frozen,
+      releaseAt: Number(userMainPart.releaseAt),
+      rank1Received: Number(userMainPart.rank1Received),
+      rank1Delivered: Number(userMainPart.rank1Delivered),
+    };
+  }
+
+  async function onNewChainUser(userAddr) {
+    const userMainPart = await newOrg.userMap(userAddr);
+    const userChildren = await newOrg.getChildren(userAddr);
     return {
       children: userChildren,
       parent: userMainPart.parent,
